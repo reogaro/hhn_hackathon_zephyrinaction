@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.20.0)
 
 # Tilt Maze reuses the VDMA/HDMI drivers and the out-of-tree devicetree
 # bindings from Flappy Microchip rather than copying them.
-set(FLAPPY "${CMAKE_CURRENT_SOURCE_DIR}/../examples/flappy-microchip/source")
+set(FLAPPY "${CMAKE_CURRENT_SOURCE_DIR}/../flappy-microchip/source")
 
 # The Flappy source root contains dts/bindings/ — tell Zephyr to search it.
 list(APPEND DTS_ROOT "${FLAPPY}")

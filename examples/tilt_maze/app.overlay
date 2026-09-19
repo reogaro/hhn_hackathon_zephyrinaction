@@ -8,7 +8,7 @@
  * must run from cached DDR at 0x80000000, not from LIM or scratchpad.
  */
 
-#include "../examples/flappy-microchip/source/dts/overlays/pic64gx_display.overlay"
+#include "../flappy-microchip/source/dts/overlays/pic64gx_display.overlay"
 
 / {
 	cached_ram: memory@80000000 {
