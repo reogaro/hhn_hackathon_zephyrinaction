@@ -1,5 +1,5 @@
 # Zephyr and west output
-build/
+*build/
 .west/
 *.elf
 *.log
