@@ -23,6 +23,9 @@
  *      actually reading the chip ID register.
  */
 
+#include <math.h>
+#include <stdlib.h>
+
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
 #include <zephyr/drivers/i2c.h>
@@ -46,15 +49,20 @@
 
 #define BMA456_CMD_SOFTRESET    0xB6
 
-/* ACC_CONF: bandwidth parameter "averaging over 2 samples" | ODR 50 Hz */
-#define BMA456_ACC_CONF_DEFAULT 0x17
+/*
+ * ACC_CONF: performance mode (bit 7) | normal filter, 4x averaging (bits 6:4)
+ * | ODR 100 Hz (bits 3:0). Performance mode keeps the sensor fully awake, so a
+ * new sample really arrives every 10 ms. Without it the sensor averages and
+ * duty-cycles, which adds latency.
+ */
+#define BMA456_ACC_CONF_DEFAULT 0xA8
 /* ACC_RANGE: +/- 2 g */
 #define BMA456_ACC_RANGE_2G     0x00
 
 /* POWER_CTRL: accelerometer enable */
 #define BMA456_POWER_CTRL_ACC_EN 0x04
-/* POWER_CONF: fast power-up | advanced power save */
-#define BMA456_POWER_CONF_DEFAULT 0x03
+/* POWER_CONF: advanced power save off, for the lowest latency */
+#define BMA456_POWER_CONF_DEFAULT 0x00
 
 /* Accelerometer output is 12 bit, left aligned inside a 16 bit word, so the
  * usable range is -2048..2047 counts. At +/-2 g full scale one count is
@@ -62,6 +70,22 @@
  */
 #define BMA456_RAW_BITS         12
 #define BMA456_RANGE_MG         2000
+
+/*
+ * Low-pass filter weight of the newest sample: filt += ALPHA * (new - filt).
+ * At 100 Hz, 0.2 settles in roughly 0.1 s. Raise it for a snappier but noisier
+ * angle, lower it for a smoother but laggier one.
+ */
+#define TILT_FILTER_ALPHA       0.2f
+
+/*
+ * Samples are read at the sensor rate (100 Hz) but only every Nth one is
+ * printed. The console is 115200 baud, about 11 KB/s, and a full line takes
+ * roughly 8 ms to send, so printing every sample would make the UART the
+ * bottleneck and show up as lag.
+ */
+#define PRINT_EVERY_N_SAMPLES   5
+#define RAD_TO_DEG              57.2957795f
 
 /* ── Candidate buses and addresses ────────────────────────────────────────── */
 /*
@@ -213,7 +237,7 @@ static int accel11_init(const struct accel11 *dev)
 /* Wait for the data-ready bit. Returns 0 on success, -EAGAIN on timeout. */
 static int wait_drdy(const struct accel11 *dev)
 {
-	for (int tries = 0; tries < 20; tries++) {
+	for (int tries = 0; tries < 200; tries++) {
 		uint8_t status = 0;
 		int ret = reg_read(dev->bus, dev->addr, BMA456_REG_STATUS, &status, 1);
 
@@ -225,7 +249,10 @@ static int wait_drdy(const struct accel11 *dev)
 			return 0;
 		}
 
-		k_msleep(10);
+		/* Poll at 1 ms so a fresh sample is picked up within ~1 ms of the
+		 * sensor producing it.
+		 */
+		k_msleep(1);
 	}
 
 	return -EAGAIN;
@@ -258,6 +285,48 @@ static int read_sample(const struct accel11 *dev, int16_t axes[3])
 	axes[2] = to_counts(raw[4], raw[5]);
 
 	return 0;
+}
+
+/*
+ * Tilt from the direction of gravity. Only valid while the board is still or
+ * moving slowly: any other acceleration adds to gravity and skews the result.
+ * Yaw cannot be recovered from an accelerometer alone.
+ *
+ * Signs depend on how the Click sits on the mikroBUS header; flip them here if
+ * "tilt forward" comes out with the wrong direction.
+ *
+ * Results are in hundredths of a degree because printk() cannot print floats.
+ */
+struct tilt {
+	float filt[3];
+	bool primed;
+};
+
+static void tilt_update(struct tilt *t, const int16_t axes[3], int *roll_cdeg, int *pitch_cdeg)
+{
+	for (int i = 0; i < 3; i++) {
+		if (t->primed) {
+			t->filt[i] += TILT_FILTER_ALPHA * ((float)axes[i] - t->filt[i]);
+		} else {
+			t->filt[i] = axes[i];
+		}
+	}
+	t->primed = true;
+
+	float ax = t->filt[0];
+	float ay = t->filt[1];
+	float az = t->filt[2];
+
+	float roll = atan2f(ay, az) * RAD_TO_DEG;
+	float pitch = atan2f(-ax, sqrtf(ay * ay + az * az)) * RAD_TO_DEG;
+
+	*roll_cdeg = (int)(roll * 100.0f);
+	*pitch_cdeg = (int)(pitch * 100.0f);
+}
+
+static void print_cdeg(const char *label, int cdeg)
+{
+	printk("%s %c%d.%02d deg", label, cdeg < 0 ? '-' : '+', abs(cdeg) / 100, abs(cdeg) % 100);
 }
 
 static int read_temperature(const struct accel11 *dev, int *celsius)
@@ -325,7 +394,7 @@ int main(void)
 		return 0;
 	}
 
-	printk("Configured: ODR 50 Hz, +/-2 g range\n");
+	printk("Configured: ODR 100 Hz (performance mode), +/-2 g range\n");
 
 	int temperature;
 
@@ -336,6 +405,8 @@ int main(void)
 	printk("\nStreaming samples (raw counts are 12 bit, -2048..2047):\n\n");
 
 	int consecutive_errors = 0;
+	struct tilt tilt = { 0 };
+	unsigned int sample_count = 0;
 
 	while (1) {
 		int ret = wait_drdy(&dev);
@@ -349,10 +420,20 @@ int main(void)
 
 			ret = read_sample(&dev, axes);
 			if (ret == 0) {
-				printk("X %6d (%5d mg)   Y %6d (%5d mg)   Z %6d (%5d mg)\n",
-				       axes[0], counts_to_mg(axes[0]),
-				       axes[1], counts_to_mg(axes[1]),
-				       axes[2], counts_to_mg(axes[2]));
+				int roll, pitch;
+
+				/* Filter every sample, print only some of them. */
+				tilt_update(&tilt, axes, &roll, &pitch);
+
+				if (++sample_count % PRINT_EVERY_N_SAMPLES == 0) {
+					print_cdeg("roll", roll);
+					printk("   ");
+					print_cdeg("pitch", pitch);
+					printk("   (X %5d  Y %5d  Z %5d mg)\n",
+					       counts_to_mg(axes[0]),
+					       counts_to_mg(axes[1]),
+					       counts_to_mg(axes[2]));
+				}
 			} else {
 				printk("sample read failed (%d)\n", ret);
 			}
@@ -364,11 +445,11 @@ int main(void)
 				       "remains available on this console.\n");
 				return 0;
 			}
+			/* Back off between retries; the success path never sleeps. */
+			k_msleep(100);
 		} else {
 			consecutive_errors = 0;
 		}
-
-		k_msleep(500);
 	}
 
 	return 0;

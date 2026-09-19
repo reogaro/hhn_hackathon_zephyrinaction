@@ -1,0 +1,25 @@
+/*
+ * app.overlay — GY-521 (MPU-6050) I2C example
+ *
+ * SMP atomics (AMO/LR-SC on SiFive U54) require the L2 cache, so Zephyr must
+ * run from cached DDR at 0x80000000, not from LIM or scratchpad. The board DTS
+ * points zephyr,sram at the full 1 GB dram node; narrowing it to 2 MB keeps the
+ * image small and matches the HSS payload entry address below.
+ *
+ * i2c0 and i2c1 are already status = "okay" in
+ * boards/microchip/pic64gx_curiosity_kit/pic64gx_curiosity_kit_common.dtsi,
+ * so no I2C node needs to be enabled here. Which of the two reaches the
+ * mikroBUS header depends on the FPGA fabric design, which is why main.c
+ * probes both.
+ */
+
+/ {
+	cached_ram: memory@80000000 {
+		compatible = "mmio-sram";
+		reg = <0x80000000 0x200000>;   /* 2 MB cached DDR */
+	};
+
+	chosen {
+		zephyr,sram = &cached_ram;
+	};
+};
