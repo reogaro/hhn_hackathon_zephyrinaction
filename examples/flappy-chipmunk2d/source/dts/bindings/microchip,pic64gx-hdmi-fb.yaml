@@ -1,0 +1,15 @@
+description: PIC64GX Generic HDMI Framebuffer Driver
+
+compatible: "microchip,pic64gx-hdmi-fb"
+
+include: [base.yaml, display-controller.yaml]
+
+properties:
+  fb-base:
+    type: int
+    required: true
+    description: |
+      CPU address of the front framebuffer (non-cached WCB DDR alias).
+      Single-buffer mode: LVGL writes directly to this address; the VDMA
+      loops it at 60 Hz. No back-buffer flip needed.
+      Example: 0xC0200000 for 1280x720 YUYV422 (1280*720*2 = 1,843,200 bytes).

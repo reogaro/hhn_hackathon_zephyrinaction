@@ -1,0 +1,22 @@
+/*
+ * app.overlay — PIC64GX SMP Hello demo
+ *
+ * Hardware nodes (VDMA, DC, HDMI framebuffer) are in the shared overlay.
+ * This file adds the Zephyr SRAM region and completes the chosen node.
+ *
+ * SMP atomics (AMO/LR-SC on SiFive U54) require the L2 cache, so Zephyr
+ * must run from cached DDR at 0x80000000, not from LIM or scratchpad.
+ */
+
+#include "../../dts/overlays/pic64gx_display.overlay"
+
+/ {
+	cached_ram: memory@80000000 {
+		compatible = "mmio-sram";
+		reg = <0x80000000 0x200000>;   /* 1 MB cached DDR */
+	};
+
+	chosen {
+		zephyr,sram = &cached_ram;
+	};
+};

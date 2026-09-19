@@ -1,0 +1,51 @@
+description: |
+  PIC64GX VDMA display pipeline driver.
+  Covers the VDMA read channel (0x6000A000) and Display Controller (0x6000C000).
+  YUYV422 output at 1280x720 60Hz via the on-chip display pipeline to HDMI.
+
+compatible: "microchip,pic64gx-vdma-disp"
+
+include: base.yaml
+
+properties:
+  reg:
+    required: true
+    description: |
+      Two register regions: [0] VDMA read channel, [1] Display Controller.
+
+  reg-names:
+    required: true
+    description: Must be "vdma", "dc" in that order.
+
+  interrupts:
+    required: true
+    description: |
+      PLIC interrupt for VDMA end-of-frame.
+      F2H3 = PLIC_F2M_3 = IRQ 121, priority 1.
+
+  interrupt-parent:
+    required: true
+
+  fb-front-addr:
+    type: int
+    required: true
+    description: CPU address of front framebuffer (32-bit non-cached WCB alias).
+
+  fb-back-addr:
+    type: int
+    required: true
+    description: CPU address of back framebuffer (32-bit non-cached WCB alias).
+
+  fifo-front-val:
+    type: int
+    required: true
+    description: |
+      VDMA BUFF_ADDR_FIFO value for front buffer.
+      = 38-bit non-cached physical address >> 6
+
+  fifo-back-val:
+    type: int
+    required: true
+    description: |
+      VDMA BUFF_ADDR_FIFO value for back buffer.
+      = 38-bit non-cached physical address >> 6

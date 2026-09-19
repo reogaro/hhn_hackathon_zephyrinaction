@@ -1,0 +1,40 @@
+/*
+ * pic64gx_display.overlay — shared VDMA + Display Controller + HDMI framebuffer nodes
+ * for the PIC64GX Curiosity Kit.
+ *
+ * #include this from a demo's app.overlay, then add the Zephyr SRAM node and
+ * chosen { zephyr,sram = ...; } for the specific demo's memory layout.
+ *
+ * Framebuffers use the non-cached WCB DDR alias (0xC0000000 base).
+ * CPU writes via 32-bit WCB; VDMA reads via 38-bit non-cached DDR path.
+ *   Front: 0xC0200000  →  FIFO value 0x50008000  (= 0x1400200000 >> 6)
+ *   Back:  0xC0400000  →  FIFO value 0x50010000  (= 0x1400400000 >> 6)
+ */
+
+/ {
+	vdma_disp: vdma-display@6000a000 {
+		compatible = "microchip,pic64gx-vdma-disp";
+		reg = <0x6000A000 0x100
+		       0x6000C000 0x100>;
+		reg-names = "vdma", "dc";
+		interrupt-parent = <&plic>;
+		interrupts = <121 1>;
+		fb-front-addr  = <0xC0200000>;
+		fb-back-addr   = <0xC0400000>;
+		fifo-front-val = <0x50008000>;   /* 0x1400200000 >> 6 */
+		fifo-back-val  = <0x50010000>;   /* 0x1400400000 >> 6 */
+		status = "okay";
+	};
+
+	hdmi_fb0: hdmi-fb {
+		compatible = "microchip,pic64gx-hdmi-fb";
+		width  = <1280>;
+		height = <720>;
+		fb-base = <0xC0200000>;
+		status = "okay";
+	};
+
+	chosen {
+		zephyr,display = &hdmi_fb0;
+	};
+};

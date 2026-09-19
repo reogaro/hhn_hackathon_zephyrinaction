@@ -1,0 +1,10 @@
+build/
+*.pyc
+__pycache__/
+*.o
+*.elf
+*.bin
+.west/
+*.log
+*.swp
+.DS_Store
