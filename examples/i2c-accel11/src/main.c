@@ -185,9 +185,16 @@ static bool detect(struct accel11 *out)
 
 static int accel11_init(const struct accel11 *dev)
 {
-	int ret;
+	int ret = -EIO;
 
-	ret = reg_write(dev->bus, dev->addr, BMA456_REG_CMD, BMA456_CMD_SOFTRESET);
+	k_msleep(50);
+	for (int tries = 0; tries < 5; tries++) {
+		ret = reg_write(dev->bus, dev->addr, BMA456_REG_CMD, BMA456_CMD_SOFTRESET);
+		if (ret == 0) {
+			break;
+		}
+		k_msleep(50);
+	}
 	if (ret != 0) {
 		printk("soft reset failed (%d)\n", ret);
 		return ret;
@@ -197,27 +204,51 @@ static int accel11_init(const struct accel11 *dev)
 	k_msleep(500);
 
 	/* Enable the accelerometer before configuring it. */
-	ret = reg_write(dev->bus, dev->addr, BMA456_REG_POWER_CTRL, BMA456_POWER_CTRL_ACC_EN);
+	for (int tries = 0; tries < 5; tries++) {
+		ret = reg_write(dev->bus, dev->addr, BMA456_REG_POWER_CTRL, BMA456_POWER_CTRL_ACC_EN);
+		if (ret == 0) {
+			break;
+		}
+		k_msleep(50);
+	}
 	if (ret != 0) {
 		printk("POWER_CTRL write failed (%d)\n", ret);
 		return ret;
 	}
 	k_msleep(10);
 
-	ret = reg_write(dev->bus, dev->addr, BMA456_REG_POWER_CONF, BMA456_POWER_CONF_DEFAULT);
+	for (int tries = 0; tries < 5; tries++) {
+		ret = reg_write(dev->bus, dev->addr, BMA456_REG_POWER_CONF, BMA456_POWER_CONF_DEFAULT);
+		if (ret == 0) {
+			break;
+		}
+		k_msleep(50);
+	}
 	if (ret != 0) {
 		printk("POWER_CONF write failed (%d)\n", ret);
 		return ret;
 	}
 	k_msleep(10);
 
-	ret = reg_write(dev->bus, dev->addr, BMA456_REG_ACC_CONF, BMA456_ACC_CONF_DEFAULT);
+	for (int tries = 0; tries < 5; tries++) {
+		ret = reg_write(dev->bus, dev->addr, BMA456_REG_ACC_CONF, BMA456_ACC_CONF_DEFAULT);
+		if (ret == 0) {
+			break;
+		}
+		k_msleep(50);
+	}
 	if (ret != 0) {
 		printk("ACC_CONF write failed (%d)\n", ret);
 		return ret;
 	}
 
-	ret = reg_write(dev->bus, dev->addr, BMA456_REG_ACC_RANGE, BMA456_ACC_RANGE_2G);
+	for (int tries = 0; tries < 5; tries++) {
+		ret = reg_write(dev->bus, dev->addr, BMA456_REG_ACC_RANGE, BMA456_ACC_RANGE_2G);
+		if (ret == 0) {
+			break;
+		}
+		k_msleep(50);
+	}
 	if (ret != 0) {
 		printk("ACC_RANGE write failed (%d)\n", ret);
 		return ret;
