@@ -30,6 +30,16 @@ further flicks are ignored for `FLICK_HOLDOFF_MS` (250 ms), because a flick has 
 push phase and a braking phase that would both count. Both constants are at the
 top of `src/accel11.c`.
 
+Noise handling, in the order a sample meets it:
+
+1. **Bad reads are dropped.** A read that returns all zeros or all ones is a bus
+   glitch, not a sample, and is discarded. Twenty failures in a row stop the
+   reader.
+2. **Median of three.** The threshold is judged on the median of the last three
+   magnitudes, so a flick must show in two consecutive samples (20 ms). A single
+   spike from a bus glitch or a knock is ignored, and there is no added lag.
+3. **Hold-off.** One flap per flick, as above.
+
 The game tick runs every 33 ms and the sensor thread every 10 ms, so a flick is
 seen within one game frame.
 
@@ -64,6 +74,11 @@ mmuart1 at 115200 8N1. On boot you should see one of:
 ```
 
 ## Tuning
+
+Set `ACCEL11_DEBUG_PRINT` to 1 in `src/accel11.c` and watch the console. Note the
+magnitude at rest (about 1000 mg), while handling the board, and during a flick,
+then put `FLICK_THRESHOLD_MG` between "handling" and "flick". Turn it off again
+afterwards, printing at 115200 baud is slow.
 
 - Flaps fire when you only handle the board: raise `FLICK_THRESHOLD_MG`.
 - You have to shake it hard: lower `FLICK_THRESHOLD_MG`.

@@ -20,6 +20,8 @@
 
 #include "accel11.h"
 
+#include <math.h>
+
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
 #include <zephyr/drivers/i2c.h>
@@ -42,6 +44,15 @@
 #define FLICK_HOLDOFF_MS     250
 
 #define SAMPLE_PERIOD_MS     10   /* matches the 100 Hz output data rate */
+
+/*
+ * Set to 1 to print the acceleration magnitude (in mg) every few samples. Use
+ * it to see what "at rest", "handling" and "flick" look like on your board and
+ * pick FLICK_THRESHOLD_MG from real numbers. Leave it 0 for normal play: the
+ * console is slow (115200 baud) and printing costs time.
+ */
+#define ACCEL11_DEBUG_PRINT  0
+#define DEBUG_PRINT_EVERY_N  5
 
 /* ── BMA456 registers (subset) ────────────────────────────────────────────── */
 #define BMA456_REG_CHIP_ID      0x00
@@ -190,22 +201,56 @@ static int read_mg(const struct accel11 *dev, int mg[3])
 		return ret;
 	}
 
+	/*
+	 * A dead or glitching bus tends to read as all zeros or all ones. Neither
+	 * can be a real sample (at rest one axis always carries ~1 g), and both
+	 * would otherwise look like a huge spike or a free fall to is_flick().
+	 */
+	bool all_zero = true;
+	bool all_ones = true;
+
+	for (size_t i = 0; i < sizeof(raw); i++) {
+		all_zero = all_zero && raw[i] == 0x00;
+		all_ones = all_ones && raw[i] == 0xFF;
+	}
+	if (all_zero || all_ones) {
+		return -EIO;
+	}
+
 	mg[0] = counts_to_mg(raw[0], raw[1]);
 	mg[1] = counts_to_mg(raw[2], raw[3]);
 	mg[2] = counts_to_mg(raw[4], raw[5]);
 	return 0;
 }
 
-/*
- * True when |a| is more than FLICK_THRESHOLD_MG away from 1 g. Compares squared
- * magnitudes so no square root (and no FPU state) is needed. The largest
- * possible sum is 3 * 2000^2 = 12e6, which fits an int32.
+/* Squared magnitude in mg^2. The largest possible sum is 3 * 2000^2 = 12e6,
+ * which fits an int32, and comparing squares avoids a square root.
  */
-static bool is_flick(const int mg[3])
+static int mag2_of(const int mg[3])
+{
+	return mg[0] * mg[0] + mg[1] * mg[1] + mg[2] * mg[2];
+}
+
+/* Median of three: drops a single wild sample without adding any lag. */
+static int median3(int a, int b, int c)
+{
+	if (a > b) {
+		int t = a; a = b; b = t;
+	}
+	if (b > c) {
+		b = c;
+	}
+	return a > b ? a : b;
+}
+
+/*
+ * True when |a| is more than FLICK_THRESHOLD_MG away from 1 g. Takes the squared
+ * magnitude.
+ */
+static bool is_flick(int mag2)
 {
 	const int hi = 1000 + FLICK_THRESHOLD_MG;
 	const int lo = 1000 - FLICK_THRESHOLD_MG;
-	int mag2 = mg[0] * mg[0] + mg[1] * mg[1] + mg[2] * mg[2];
 
 	return mag2 > hi * hi || mag2 < lo * lo;
 }
@@ -240,6 +285,8 @@ static void accel_fn(void *p1, void *p2, void *p3)
 
 	int64_t last_flap = 0;
 	int errors = 0;
+	int hist[3] = { 1000 * 1000, 1000 * 1000, 1000 * 1000 };  /* start at 1 g */
+	unsigned int n = 0;
 
 	while (true) {
 		int mg[3];
@@ -252,9 +299,22 @@ static void accel_fn(void *p1, void *p2, void *p3)
 		} else {
 			errors = 0;
 
+			/*
+			 * Judge the median of the last three samples, so a flick has to
+			 * show up in at least two consecutive samples (20 ms). A lone
+			 * spike from an I2C glitch or a knock does not qualify.
+			 */
+			hist[n++ % 3] = mag2_of(mg);
+			int mag2 = median3(hist[0], hist[1], hist[2]);
+
+			if (ACCEL11_DEBUG_PRINT && n % DEBUG_PRINT_EVERY_N == 0) {
+				printk("[accel11] |a| raw %d mg  median %d mg\n",
+				       (int)sqrtf((float)mag2_of(mg)), (int)sqrtf((float)mag2));
+			}
+
 			int64_t now = k_uptime_get();
 
-			if (is_flick(mg) && now - last_flap >= FLICK_HOLDOFF_MS) {
+			if (is_flick(mag2) && now - last_flap >= FLICK_HOLDOFF_MS) {
 				last_flap = now;
 				atomic_set(&flap_pending, 1);
 			}
