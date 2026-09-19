@@ -17,6 +17,10 @@ file(GLOB CHIPMUNK_SOURCES "${CHIPMUNK}/src/*.c")
 
 target_sources(app PRIVATE
     src/main.c
+    src/maze_map.c
+    src/maze_physics.c
+    src/maze_ui.c
+    src/maze_game.c
     src/gy521.c
     ${CHIPMUNK_SOURCES}
     ${DRIVERS}/vdma_disp/vdma_disp.c
