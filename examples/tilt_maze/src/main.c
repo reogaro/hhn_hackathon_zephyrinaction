@@ -9,6 +9,7 @@
 #include <zephyr/kernel.h>
 #include <zephyr/drivers/display.h>
 #include <lvgl.h>
+#include <chipmunk/chipmunk.h>
 #include <math.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -151,6 +152,64 @@ static lv_obj_t *platform_obj;
 static lv_obj_t *ball_obj;
 static lv_obj_t *banner_obj;
 
+/* ── Chipmunk2D Physics Simulation ────────────────────────────────────────── */
+static cpSpace *physics_space;
+static cpBody  *ball_body;
+static cpShape *ball_shape;
+
+static void init_physics(void)
+{
+	physics_space = cpSpaceNew();
+	cpSpaceSetGravity(physics_space, cpvzero);
+	cpSpaceSetDamping(physics_space, 0.94f);
+
+	cpBody *static_body = cpSpaceGetStaticBody(physics_space);
+
+	/* 1. Perimeter Boundaries (inner edges: X: 70..730, Y: 70..530) */
+	struct { cpVect a, b; } perim_segs[] = {
+		{ cpv(70, 70),   cpv(730, 70) },  /* Top */
+		{ cpv(70, 530),  cpv(730, 530) }, /* Bottom */
+		{ cpv(70, 70),   cpv(70, 530) },  /* Left */
+		{ cpv(730, 70),  cpv(730, 530) }, /* Right */
+	};
+
+	for (size_t i = 0; i < ARRAY_SIZE(perim_segs); i++) {
+		cpShape *seg = cpSegmentShapeNew(static_body, perim_segs[i].a, perim_segs[i].b, 0.0f);
+		cpShapeSetElasticity(seg, 0.5f);
+		cpShapeSetFriction(seg, 0.4f);
+		cpSpaceAddShape(physics_space, seg);
+	}
+
+	/* 2. Interior Maze Wall Segments */
+	for (int i = 0; i < N_MAZE_WALLS; i++) {
+		for (int j = 0; j < maze_walls[i].n - 1; j++) {
+			cpVect p1 = cpv(maze_walls[i].pts[j].x, maze_walls[i].pts[j].y);
+			cpVect p2 = cpv(maze_walls[i].pts[j + 1].x, maze_walls[i].pts[j + 1].y);
+			cpShape *seg = cpSegmentShapeNew(static_body, p1, p2, maze_walls[i].half_w);
+			cpShapeSetElasticity(seg, 0.5f);
+			cpShapeSetFriction(seg, 0.4f);
+			cpSpaceAddShape(physics_space, seg);
+		}
+	}
+
+	/* 3. Marble Dynamic Body */
+	cpFloat mass = 1.0f;
+	cpFloat moment = cpMomentForCircle(mass, 0, BALL_RADIUS, cpvzero);
+	ball_body = cpSpaceAddBody(physics_space, cpBodyNew(mass, moment));
+	cpBodySetPosition(ball_body, cpv(START_X, START_Y));
+
+	ball_shape = cpSpaceAddShape(physics_space, cpCircleShapeNew(ball_body, BALL_RADIUS, cpvzero));
+	cpShapeSetElasticity(ball_shape, 0.55f);
+	cpShapeSetFriction(ball_shape, 0.35f);
+}
+
+static void reset_ball(void)
+{
+	cpBodySetPosition(ball_body, cpv(START_X, START_Y));
+	cpBodySetVelocity(ball_body, cpvzero);
+	cpBodySetAngularVelocity(ball_body, 0.0f);
+}
+
 /* ── Build LVGL Scene Graph ───────────────────────────────────────────────── */
 static void create_maze_gui(void)
 {
@@ -261,47 +320,11 @@ static void create_maze_gui(void)
 	lv_obj_add_flag(banner_obj, LV_OBJ_FLAG_HIDDEN);
 }
 
-/* ── Physics Collision Handling ───────────────────────────────────────────── */
-struct tilt_sample { float x, y; };
-
-static void resolve_bounce(float dx, float dy, float dist, float *vx, float *vy)
-{
-	float nx = dx / dist, ny = dy / dist;
-	float vn = (*vx) * nx + (*vy) * ny;
-	if (vn < 0) {
-		const float restitution = 0.55f;
-		*vx -= (1.0f + restitution) * vn * nx;
-		*vy -= (1.0f + restitution) * vn * ny;
-	}
-}
-
-static void collide_path(WallPath *p, float *x, float *y, float *vx, float *vy)
-{
-	for (int i = 0; i < p->n - 1; i++) {
-		Vec2 A = p->pts[i], B = p->pts[i + 1];
-		float abx = B.x - A.x, aby = B.y - A.y;
-		float ab_len2 = abx * abx + aby * aby;
-		float t = ab_len2 > 0 ? ((*x - A.x) * abx + (*y - A.y) * aby) / ab_len2 : 0;
-		if (t < 0) t = 0;
-		if (t > 1) t = 1;
-		float cx = A.x + t * abx, cy = A.y + t * aby;
-		float dx = *x - cx, dy = *y - cy;
-		float dist2 = dx * dx + dy * dy;
-		float min_dist = BALL_RADIUS + p->half_w;
-		if (dist2 < min_dist * min_dist) {
-			float dist = dist2 > 0 ? sqrtf(dist2) : 0.01f;
-			float push = min_dist - dist;
-			*x += (dx / dist) * push;
-			*y += (dy / dist) * push;
-			resolve_bounce(dx, dy, dist, vx, vy);
-		}
-	}
-}
-
 int main(void)
 {
 	printk("[tilt_maze] Booting Tilt Maze...\n");
 	build_maze();
+	init_physics();
 
 	const struct device *display = DEVICE_DT_GET(DT_CHOSEN(zephyr_display));
 	if (!device_is_ready(display)) {
@@ -316,11 +339,10 @@ int main(void)
 
 	gy521_start();
 
-	float x = START_X, y = START_Y, vx = 0, vy = 0;
-	const float accel_scale = 900.0f, rolling_friction = 220.0f, max_speed = 500.0f;
+	const float accel_scale = 1600.0f;
 	uint32_t banner_until = 0;
 	uint32_t last = k_uptime_get_32();
-	struct tilt_sample tilt;
+	struct { float x, y; } tilt;
 
 	while (1) {
 		gy521_get_tilt(&tilt.x, &tilt.y);
@@ -333,65 +355,41 @@ int main(void)
 		float dt = (now - last) / 1000.0f;
 		last = now;
 		if (dt > 0.05f) dt = 0.05f;
+		if (dt <= 0.001f) dt = 0.001f;
 
-		vx += tilt.x * accel_scale * dt;
-		vy += tilt.y * accel_scale * dt;
+		/* Update dynamic gravity vector from IMU tilt */
+		cpSpaceSetGravity(physics_space, cpv(tilt.x * accel_scale, tilt.y * accel_scale));
 
-		float speed = sqrtf(vx * vx + vy * vy);
-		if (speed > 0) {
-			float dec = fminf(rolling_friction * dt, speed);
-			vx -= (vx / speed) * dec;
-			vy -= (vy / speed) * dec;
-		}
-		speed = sqrtf(vx * vx + vy * vy);
-		if (speed > max_speed) {
-			vx = (vx / speed) * max_speed;
-			vy = (vy / speed) * max_speed;
-		}
+		/* Substep Chipmunk2D physics simulation */
+		cpSpaceStep(physics_space, dt / 2.0f);
+		cpSpaceStep(physics_space, dt / 2.0f);
 
-		x += vx * dt;
-		y += vy * dt;
+		cpVect pos = cpBodyGetPosition(ball_body);
 
-		/* Perimeter collision */
-		for (int i = 0; i < N_PERIM; i++) {
-			Rect w = perimeter[i];
-			float cx = fmaxf(w.x, fminf(x, w.x + w.w));
-			float cy = fmaxf(w.y, fminf(y, w.y + w.h));
-			float dx = x - cx, dy = y - cy;
-			float dist2 = dx * dx + dy * dy;
-			if (dist2 < BALL_RADIUS * BALL_RADIUS) {
-				float dist = dist2 > 0 ? sqrtf(dist2) : 0.01f;
-				float push = BALL_RADIUS - dist;
-				x += (dx / dist) * push;
-				y += (dy / dist) * push;
-				resolve_bounce(dx, dy, dist, &vx, &vy);
-			}
-		}
-
-		/* Internal maze walls collision */
-		for (int i = 0; i < N_MAZE_WALLS; i++) {
-			collide_path(&maze_walls[i], &x, &y, &vx, &vy);
-		}
-
-		/* Hole / Pit collision */
+		/* Hole / Pit collision check */
 		for (int i = 0; i < N_PITS; i++) {
-			float dx = x - pits[i].x, dy = y - pits[i].y;
+			float dx = (float)pos.x - pits[i].x;
+			float dy = (float)pos.y - pits[i].y;
 			if (sqrtf(dx * dx + dy * dy) < pits[i].r) {
 				printk("Fell in a hole - resetting\n");
-				x = START_X; y = START_Y; vx = 0; vy = 0;
+				reset_ball();
+				pos = cpBodyGetPosition(ball_body);
 				lv_label_set_text(banner_obj, "You fell in a hole! Restarting...");
 				lv_obj_align(banner_obj, LV_ALIGN_TOP_MID, 0, 10);
 				lv_obj_remove_flag(banner_obj, LV_OBJ_FLAG_HIDDEN);
 				banner_until = now + BANNER_MS;
+				break;
 			}
 		}
 
 		/* Goal check */
 		{
-			float dx = x - goal.x, dy = y - goal.y;
+			float dx = (float)pos.x - goal.x;
+			float dy = (float)pos.y - goal.y;
 			if (sqrtf(dx * dx + dy * dy) < goal.r) {
 				printk("Reached the goal!\n");
-				x = START_X; y = START_Y; vx = 0; vy = 0;
+				reset_ball();
+				pos = cpBodyGetPosition(ball_body);
 				lv_label_set_text(banner_obj, "You made it out! Restarting...");
 				lv_obj_align(banner_obj, LV_ALIGN_TOP_MID, 0, 10);
 				lv_obj_remove_flag(banner_obj, LV_OBJ_FLAG_HIDDEN);
@@ -401,8 +399,8 @@ int main(void)
 
 		/* Update ball position on platform */
 		lv_obj_set_pos(ball_obj,
-			       (int32_t)(x - BALL_RADIUS - PLATFORM_X),
-			       (int32_t)(y - BALL_RADIUS - PLATFORM_Y));
+			       (int32_t)(pos.x - BALL_RADIUS - PLATFORM_X),
+			       (int32_t)(pos.y - BALL_RADIUS - PLATFORM_Y));
 
 		lv_timer_handler();
 		k_msleep(10);

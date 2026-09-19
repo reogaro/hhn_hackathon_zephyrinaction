@@ -12,10 +12,13 @@ find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(tilt_maze)
 
 set(DRIVERS "${FLAPPY}/drivers")
+set(CHIPMUNK "${CMAKE_CURRENT_SOURCE_DIR}/../flappy-chipmunk2d/source/demos/pic64_smp_hello/chipmunk")
+file(GLOB CHIPMUNK_SOURCES "${CHIPMUNK}/src/*.c")
 
 target_sources(app PRIVATE
     src/main.c
     src/gy521.c
+    ${CHIPMUNK_SOURCES}
     ${DRIVERS}/vdma_disp/vdma_disp.c
     ${DRIVERS}/hdmi_fb/hdmi_fb.c
 )
@@ -23,6 +26,7 @@ target_sources(app PRIVATE
 # hdmi_fb.c includes vdma_disp.h — expose both driver directories
 target_include_directories(app PRIVATE
     src
+    ${CHIPMUNK}/include
     ${DRIVERS}/vdma_disp
     ${DRIVERS}/hdmi_fb
 )
