@@ -17,19 +17,19 @@ static const maze_rect_t perimeter_walls[] = {
 static maze_wall_path_t internal_walls[N_MAZE_WALLS];
 
 static const maze_hole_t trap_pits[] = {
-	{ 214, 91,  13 },
-	{ 337, 125, 13 },
-	{ 359, 215, 13 },
-	{ 110, 253, 13 },
-	{ 210, 302, 13 },
-	{ 535, 264, 13 },
-	{ 643, 273, 13 },
-	{ 702, 348, 13 },
-	{ 121, 440, 13 },
-	{ 263, 367, 13 },
+	{ 214, 91,  17 },
+	{ 337, 125, 17 },
+	{ 359, 215, 17 },
+	{ 110, 253, 17 },
+	{ 210, 302, 17 },
+	{ 535, 264, 17 },
+	{ 643, 273, 17 },
+	{ 702, 348, 17 },
+	{ 121, 440, 17 },
+	{ 263, 377, 17 },
 };
 
-static const maze_hole_t exit_goal = { 685, 490, 16 };
+static const maze_hole_t exit_goal = { 685, 490, 20 };
 
 static void path_add(maze_wall_path_t *p, float x, float y)
 {
