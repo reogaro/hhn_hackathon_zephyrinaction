@@ -19,6 +19,7 @@
 #include "maze_game.h"
 #include "gy521.h"
 #include "button.h"
+#include "led_ring.h"
 
 int main(void)
 {
@@ -40,6 +41,7 @@ int main(void)
 	maze_physics_start(); /* core 1: physics */
 	maze_game_start();    /* core 2: game rules */
 	maze_ui_start();      /* core 0: LVGL */
+	led_ring_start();     /* core 2: LED ring follows the game state */
 	button_start(maze_game_on_button); /* core 3: button controls game start/restart */
 
 	printk("[tilt_maze] Initialization complete. UI/physics/game/sensor running on cores 0-3.\n");

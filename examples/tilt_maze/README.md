@@ -16,6 +16,7 @@ Each module runs in its own thread, pinned to its own U54 hart (`src/maze_cores.
 | 1    | physics | Chipmunk2D at ~60 Hz; the only thread that touches Chipmunk; reads tilt, publishes ball position |
 | 2    | game    | Pit/goal rules and state machine (START, PLAYING, GAME OVER, VICTORY) |
 | 3    | gy521   | 100 Hz I2C accelerometer polling |
+| 2    | led_ring | WS2812 ring (SPI1, polled): follows the game state (shares core 2) |
 | 3    | button  | mikroBUS button polling (light, shares core 3); starts/restarts game |
 
 Threads share only small snapshots (spinlock-protected ball position, atomic tilt, game state flags).
@@ -38,6 +39,17 @@ A push button on the mikroBUS INT pin (`gpio1` pin 0, see `app.overlay`) control
 - **Game Over / Victory**: Press the button to return to the title screen.
 
 Wire one leg to INT and the diagonal leg to GND, with a 10 kΩ pull-up from INT to 3P3V.
+
+## LED ring
+
+A 24-LED WS2812 ring shows the game state. Wire DIN to the mikroBUS MOSI pin, 5V and GND to the ring, with a common ground. No pull-up is needed. The LED count is `chain-length` in `app.overlay`; brightness is `BRIGHTNESS` in `src/led_ring.c`. Without a ring connected the game runs normally.
+
+| Situation | Ring |
+| --------- | ---- |
+| Title screen (until the game is started) | all LEDs cycle blue → yellow → green → red, repeating |
+| Playing | green |
+| Game over | red blinks until the game is restarted |
+| Victory | green blinks until the game is restarted |
 
 ## Build
 

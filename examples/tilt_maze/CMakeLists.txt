@@ -23,6 +23,7 @@ target_sources(app PRIVATE
     src/maze_game.c
     src/gy521.c
     src/button.c
+    src/led_ring.c
     ${CHIPMUNK_SOURCES}
     src/img_gameover.c
     src/img_victory.c

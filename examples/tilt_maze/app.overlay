@@ -9,6 +9,7 @@
  */
 
 #include <zephyr/dt-bindings/input/input-event-codes.h>
+#include <zephyr/dt-bindings/led/led.h>
 #include "../flappy-microchip/source/dts/overlays/pic64gx_display.overlay"
 
 / {
@@ -23,6 +24,7 @@
 
 	aliases {
 		mikrobus-btn = &mikrobus_btn;
+		led-strip = &led_strip;
 	};
 
 	/* mikroBUS INT push button (10k pull-up to 3P3V, other leg to GND) */
@@ -46,5 +48,30 @@
 		accel-fs = <2>;
 		gyro-fs = <250>;
 		smplrt-div = <4>;
+	};
+};
+
+/*
+ * WS2812 ring on the mikroBUS MOSI pin (DIN), driven by SPI1.
+ *
+ * The MSS SPI clock is 150 MHz / (2 * (idx + 1)). Asking for 7 MHz selects
+ * idx = 11, i.e. 6.25 MHz, so one 8-bit SPI byte is one WS2812 bit (1.28 us):
+ *   '1' = 0xF8 -> 800 ns high, 480 ns low
+ *   '0' = 0xC0 -> 320 ns high, 960 ns low
+ * Requests below ~4.7 MHz do not work: the driver falls back to divider 0.
+ */
+&spi1 {
+	status = "okay";
+
+	led_strip: ws2812@0 {
+		compatible = "worldsemi,ws2812-spi";
+		reg = <0>;
+		spi-max-frequency = <7000000>;
+		chain-length = <14>;   /* number of LEDs on the ring */
+		color-mapping = <LED_COLOR_ID_GREEN
+				 LED_COLOR_ID_RED
+				 LED_COLOR_ID_BLUE>;
+		spi-one-frame = <0xF8>;
+		spi-zero-frame = <0xC0>;
 	};
 };

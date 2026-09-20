@@ -15,6 +15,7 @@
 #define MAZE_CORE_UI       0  /* LVGL scene graph + rendering */
 #define MAZE_CORE_PHYSICS  1  /* Chipmunk2D simulation */
 #define MAZE_CORE_GAME     2  /* pit / goal rules, banner state */
+#define MAZE_CORE_LED      2  /* WS2812 ring: polled SPI, shares the game core */
 #define MAZE_CORE_SENSOR   3  /* GY-521 I2C polling */
 #define MAZE_CORE_BUTTON   3  /* mikroBUS button polling (light, shares the sensor core) */
 
