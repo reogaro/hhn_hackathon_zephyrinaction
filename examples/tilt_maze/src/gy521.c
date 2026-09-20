@@ -21,7 +21,7 @@
 
 /* ── Tuning ───────────────────────────────────────────────────────────────── */
 #define TILT_INVERT_X   1
-#define TILT_INVERT_Y   0
+#define TILT_INVERT_Y   1
 #define TILT_SWAP_XY    1
 
 /* Weight of each new sample in the low-pass filter. Lower is smoother but laggier. */
