@@ -22,6 +22,7 @@ target_sources(app PRIVATE
     src/maze_ui.c
     src/maze_game.c
     src/gy521.c
+    src/button.c
     ${CHIPMUNK_SOURCES}
     ${DRIVERS}/vdma_disp/vdma_disp.c
     ${DRIVERS}/hdmi_fb/hdmi_fb.c

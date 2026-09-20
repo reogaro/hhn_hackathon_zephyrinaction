@@ -16,6 +16,7 @@
 #define MAZE_CORE_PHYSICS  1  /* Chipmunk2D simulation */
 #define MAZE_CORE_GAME     2  /* pit / goal rules, banner state */
 #define MAZE_CORE_SENSOR   3  /* GY-521 I2C polling */
+#define MAZE_CORE_BUTTON   3  /* mikroBUS button polling (light, shares the sensor core) */
 
 /* Create a thread that is only allowed to run on @p core. The mask has to be
  * set while the thread is not runnable, hence K_FOREVER + k_thread_start().

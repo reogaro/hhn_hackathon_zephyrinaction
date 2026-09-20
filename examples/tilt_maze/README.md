@@ -16,6 +16,7 @@ Each module runs in its own thread, pinned to its own U54 hart (`src/maze_cores.
 | 1    | physics | Chipmunk2D at ~60 Hz; the only thread that touches Chipmunk; reads tilt, publishes ball position |
 | 2    | game    | Pit/goal rules and banner state; asks physics to reset the ball |
 | 3    | gy521   | 100 Hz I2C accelerometer polling |
+| 3    | button  | mikroBUS button polling (light, shares core 3); long press resets the ball |
 
 Threads share only small snapshots (spinlock-protected ball position, atomic tilt, banner and reset flags).
 
@@ -28,6 +29,10 @@ Threads share only small snapshots (spinlock-protected ball position, atomic til
 | SCL        | SCL                  |
 | SDA        | SDA                  |
 | AD0        | GND (or NC), address `0x68` |
+
+## Reset button
+
+A push button on the mikroBUS INT pin (`gpio1` pin 0, see `app.overlay`) restarts the ball: hold it for 1 second (`BUTTON_LONG_PRESS_MS` in `src/button.c`). Shorter presses are ignored. Wire one leg to INT and the diagonal leg to GND, with a 10 kΩ pull-up from INT to 3P3V.
 
 ## Build
 

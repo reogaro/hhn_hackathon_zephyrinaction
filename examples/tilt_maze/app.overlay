@@ -8,6 +8,7 @@
  * must run from cached DDR at 0x80000000, not from LIM or scratchpad.
  */
 
+#include <zephyr/dt-bindings/input/input-event-codes.h>
 #include "../flappy-microchip/source/dts/overlays/pic64gx_display.overlay"
 
 / {
@@ -18,6 +19,21 @@
 
 	chosen {
 		zephyr,sram = &cached_ram;
+	};
+
+	aliases {
+		mikrobus-btn = &mikrobus_btn;
+	};
+
+	/* mikroBUS INT push button (10k pull-up to 3P3V, other leg to GND) */
+	mikrobus_keys {
+		compatible = "gpio-keys";
+
+		mikrobus_btn: mikrobus_btn {
+			gpios = <&gpio1 0 GPIO_ACTIVE_LOW>;
+			label = "mikroBUS INT button";
+			zephyr,code = <INPUT_KEY_2>;
+		};
 	};
 };
 
