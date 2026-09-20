@@ -1,0 +1,17 @@
+#include <zephyr/dt-bindings/input/input-event-codes.h>
+
+/ {
+	aliases {
+		mikrobus-btn = &mikrobus_btn;
+	};
+
+	mikrobus_keys {
+		compatible = "gpio-keys";
+
+		mikrobus_btn: mikrobus_btn {
+			gpios = <&gpio1 0 GPIO_ACTIVE_LOW>;
+			label = "mikroBUS INT button";
+			zephyr,code = <INPUT_KEY_2>;
+		};
+	};
+};
