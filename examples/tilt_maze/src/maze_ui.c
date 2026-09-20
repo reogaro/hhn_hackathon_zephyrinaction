@@ -11,9 +11,12 @@
 #include "img_gameover.h"
 #include "img_victory.h"
 #include "img_player.h"
+#include "img_title_top.h"
+#include "img_title_bot.h"
 #include <zephyr/kernel.h>
 #include <lvgl.h>
 #include <stdio.h>
+#include <math.h>
 
 #define UI_STACK      16384
 #define UI_PRIO       5
@@ -59,6 +62,8 @@ static lv_obj_t *platform_obj;
 static lv_obj_t *ball_obj;
 static lv_obj_t *status_panel;
 static lv_obj_t *status_img;
+static lv_obj_t *title_top_img;
+static lv_obj_t *title_bot_img;
 static lv_obj_t *badge_lbl;
 static lv_obj_t *status_lbl;
 static lv_obj_t *sub_lbl;
@@ -192,9 +197,15 @@ static void maze_ui_init(void)
 	lv_image_set_antialias(ball_obj, false);
 	lv_obj_set_scrollbar_mode(ball_obj, LV_SCROLLBAR_MODE_OFF);
 
-	/* 6. Status Overlay Panel (Start screen, Game Over, Victory) */
+	/* 6. Victory/Defeat 2/3rds banner (floats directly over screen) */
+	status_img = lv_image_create(scr);
+	lv_image_set_antialias(status_img, false);
+	lv_obj_add_flag(status_img, LV_OBJ_FLAG_HIDDEN);
+	lv_obj_set_scrollbar_mode(status_img, LV_SCROLLBAR_MODE_OFF);
+
+	/* 7. Status Card Box (Quake iron plate for start screen and victory/defeat bottom card) */
 	status_panel = lv_obj_create(scr);
-	lv_obj_set_size(status_panel, 880, 260);
+	lv_obj_set_size(status_panel, 880, 310);
 	lv_obj_align(status_panel, LV_ALIGN_CENTER, 0, 0);
 	lv_obj_set_style_bg_color(status_panel, lv_color_hex(C_PANEL_BG), 0);
 	lv_obj_set_style_bg_opa(status_panel, LV_OPA_90, 0);
@@ -204,22 +215,28 @@ static void maze_ui_init(void)
 	lv_obj_set_style_pad_all(status_panel, 0, 0);
 	lv_obj_set_scrollbar_mode(status_panel, LV_SCROLLBAR_MODE_OFF);
 
-	status_img = lv_image_create(status_panel);
-	lv_image_set_antialias(status_img, false);
-	lv_obj_add_flag(status_img, LV_OBJ_FLAG_HIDDEN);
-	lv_obj_set_scrollbar_mode(status_img, LV_SCROLLBAR_MODE_OFF);
-
 	badge_lbl = lv_label_create(status_panel);
 	lv_label_set_text(badge_lbl, "");
 	lv_obj_set_style_text_font(badge_lbl, &lv_font_montserrat_14, 0);
 	lv_obj_set_style_text_color(badge_lbl, lv_color_hex(0x9E7844), 0);
-	lv_obj_align(badge_lbl, LV_ALIGN_CENTER, 0, -82);
+	lv_obj_align(badge_lbl, LV_ALIGN_TOP_MID, 0, 14);
+
+	/* Layered title logotypes for start screen */
+	title_top_img = lv_image_create(status_panel);
+	lv_image_set_src(title_top_img, &img_title_top);
+	lv_image_set_antialias(title_top_img, false);
+	lv_obj_set_scrollbar_mode(title_top_img, LV_SCROLLBAR_MODE_OFF);
+
+	title_bot_img = lv_image_create(status_panel);
+	lv_image_set_src(title_bot_img, &img_title_bot);
+	lv_image_set_antialias(title_bot_img, false);
+	lv_obj_set_scrollbar_mode(title_bot_img, LV_SCROLLBAR_MODE_OFF);
 
 	status_lbl = lv_label_create(status_panel);
 	lv_label_set_text(status_lbl, "");
 	lv_obj_set_style_text_font(status_lbl, &lv_font_montserrat_32, 0);
 	lv_obj_set_style_text_color(status_lbl, lv_color_hex(C_TEXT_TITLE), 0);
-	lv_obj_align(status_lbl, LV_ALIGN_CENTER, 0, -46);
+	lv_obj_add_flag(status_lbl, LV_OBJ_FLAG_HIDDEN);
 
 	sub_lbl = lv_label_create(status_panel);
 	lv_label_set_text(sub_lbl, "");
@@ -301,9 +318,13 @@ static void maze_ui_update_screen(maze_state_t state)
 {
 	switch (state) {
 	case MAZE_STATE_START:
+		/* Hide the 2/3rds banner */
 		lv_image_set_scale(status_img, LV_SCALE_NONE);
 		lv_image_set_pivot(status_img, 0, 0);
-		lv_obj_set_size(status_panel, 880, 260);
+		lv_obj_add_flag(status_img, LV_OBJ_FLAG_HIDDEN);
+
+		/* Large Background box for Start Screen */
+		lv_obj_set_size(status_panel, 960, 550);
 		lv_obj_align(status_panel, LV_ALIGN_CENTER, 0, 0);
 		lv_obj_set_style_bg_color(status_panel, lv_color_hex(C_PANEL_BG), 0);
 		lv_obj_set_style_bg_opa(status_panel, LV_OPA_90, 0);
@@ -311,25 +332,35 @@ static void maze_ui_update_screen(maze_state_t state)
 		lv_obj_set_style_border_width(status_panel, 3, 0);
 		lv_obj_set_style_radius(status_panel, 8, 0);
 
-		lv_obj_add_flag(status_img, LV_OBJ_FLAG_HIDDEN);
+		/* Remove bracketed text as requested */
+		lv_obj_add_flag(badge_lbl, LV_OBJ_FLAG_HIDDEN);
 
-		lv_obj_clear_flag(badge_lbl, LV_OBJ_FLAG_HIDDEN);
-		lv_label_set_text(badge_lbl, "[ CASTLE MICROCHIP ]");
-		lv_obj_set_style_text_color(badge_lbl, lv_color_hex(C_TEXT_SUB), 0);
-		lv_obj_align(badge_lbl, LV_ALIGN_CENTER, 0, -82);
+		/* Show the enlarged logotypes placed above each other with 24% overlap (moved down further to avoid clipping) */
+		lv_obj_clear_flag(title_top_img, LV_OBJ_FLAG_HIDDEN);
+		lv_obj_clear_flag(title_bot_img, LV_OBJ_FLAG_HIDDEN);
+		lv_image_set_scale(title_top_img, 512); /* 2.0x scale (468x176px) */
+		lv_image_set_scale(title_bot_img, 512); /* 2.0x scale (468x188px) */
+		lv_image_set_pivot(title_top_img, img_title_top.header.w / 2, img_title_top.header.h / 2);
+		lv_image_set_pivot(title_bot_img, img_title_bot.header.w / 2, img_title_bot.header.h / 2);
+		lv_image_set_rotation(title_top_img, 0);
+		lv_image_set_rotation(title_bot_img, 0);
+		/* Top logo at Y=75, height 176px. Overlap is 24% (42px) -> Bottom logo at Y = 75 + 176 - 42 = 209px */
+		lv_obj_align(title_top_img, LV_ALIGN_TOP_MID, 0, 75);
+		lv_obj_align(title_bot_img, LV_ALIGN_TOP_MID, 0, 209);
 
-		lv_obj_clear_flag(status_lbl, LV_OBJ_FLAG_HIDDEN);
-		lv_label_set_text(status_lbl, "ESCAPE FROM CASTLE MICROCHIP");
-		lv_obj_set_style_text_color(status_lbl, lv_color_hex(C_TEXT_TITLE), 0);
-		lv_obj_align(status_lbl, LV_ALIGN_CENTER, 0, -46);
+		if (status_lbl) {
+			lv_obj_add_flag(status_lbl, LV_OBJ_FLAG_HIDDEN);
+		}
 
+		/* Subtitle */
 		lv_obj_clear_flag(sub_lbl, LV_OBJ_FLAG_HIDDEN);
 		lv_label_set_text(sub_lbl, "TILT THE CONTROLLER TO ROLL");
 		lv_obj_set_style_text_color(sub_lbl, lv_color_hex(C_TEXT_MUTED), 0);
-		lv_obj_align(sub_lbl, LV_ALIGN_CENTER, 0, 6);
+		lv_obj_align(sub_lbl, LV_ALIGN_TOP_MID, 0, 420);
 
-		lv_obj_set_size(prompt_btn, 480, 48);
-		lv_obj_align(prompt_btn, LV_ALIGN_CENTER, 0, 72);
+		/* Start Button */
+		lv_obj_set_size(prompt_btn, 520, 50);
+		lv_obj_align(prompt_btn, LV_ALIGN_TOP_MID, 0, 465);
 		lv_obj_set_style_bg_color(prompt_btn, lv_color_hex(C_BTN_RED_BG), 0);
 		lv_obj_set_style_bg_opa(prompt_btn, LV_OPA_COVER, 0);
 		lv_obj_set_style_border_color(prompt_btn, lv_color_hex(C_BTN_RED_RIM), 0);
@@ -345,43 +376,58 @@ static void maze_ui_update_screen(maze_state_t state)
 
 	case MAZE_STATE_PLAYING:
 		lv_obj_add_flag(status_panel, LV_OBJ_FLAG_HIDDEN);
+		lv_obj_add_flag(status_img, LV_OBJ_FLAG_HIDDEN);
+		lv_image_set_rotation(title_top_img, 0);
+		lv_image_set_rotation(title_bot_img, 0);
 		break;
 
 	case MAZE_STATE_GAME_OVER: {
-		/* Full-screen transparent container with floating banner & text */
-		lv_obj_set_size(status_panel, 1280, 720);
-		lv_obj_set_pos(status_panel, 0, 0);
-		lv_obj_set_style_bg_opa(status_panel, LV_OPA_TRANSP, 0);
-		lv_obj_set_style_border_width(status_panel, 0, 0);
-
+		/* Hide start screen title graphics */
 		lv_obj_add_flag(badge_lbl, LV_OBJ_FLAG_HIDDEN);
-		lv_obj_add_flag(status_lbl, LV_OBJ_FLAG_HIDDEN);
+		lv_obj_add_flag(title_top_img, LV_OBJ_FLAG_HIDDEN);
+		lv_obj_add_flag(title_bot_img, LV_OBJ_FLAG_HIDDEN);
+		lv_image_set_rotation(title_top_img, 0);
+		lv_image_set_rotation(title_bot_img, 0);
+		if (status_lbl) {
+			lv_obj_add_flag(status_lbl, LV_OBJ_FLAG_HIDDEN);
+		}
 
-		/* Defeat graphic banner covering 2/3rds screen height (480px) with pixelated sharp look */
+		/* 2/3rds screen height banner (480px) */
 		lv_image_set_src(status_img, &img_gameover);
 		lv_image_set_pivot(status_img, img_gameover.header.w / 2, 0);
-		lv_image_set_scale(status_img, 559); /* 220px * (559/256) ≈ 480px (2/3 of 720) */
+		lv_image_set_scale(status_img, 825); /* 149px * 825/256 ≈ 480px */
 		lv_image_set_antialias(status_img, false);
-		lv_obj_align(status_img, LV_ALIGN_TOP_MID, 0, 20);
+		lv_obj_align(status_img, LV_ALIGN_TOP_MID, 0, 15);
 		lv_obj_clear_flag(status_img, LV_OBJ_FLAG_HIDDEN);
 
-		/* Floating subtitle below banner in bright pure white */
+		/* Cohesive background box behind bottom text */
+		lv_obj_set_size(status_panel, 840, 155);
+		lv_obj_align(status_panel, LV_ALIGN_TOP_MID, 0, 510);
+		lv_obj_set_style_bg_color(status_panel, lv_color_hex(C_PANEL_BG), 0);
+		lv_obj_set_style_bg_opa(status_panel, LV_OPA_90, 0);
+		lv_obj_set_style_border_color(status_panel, lv_color_hex(C_PANEL_BORDER), 0);
+		lv_obj_set_style_border_width(status_panel, 3, 0);
+		lv_obj_set_style_radius(status_panel, 8, 0);
+
 		char tstr[16], sub_msg[48];
 		format_time(tstr, sizeof(tstr), maze_game_get_time_ms());
 		snprintf(sub_msg, sizeof(sub_msg), "SURVIVED: %s", tstr);
 		lv_label_set_text(sub_lbl, sub_msg);
-		lv_obj_set_style_text_color(sub_lbl, lv_color_hex(0xFFFFFF), 0);
-		lv_obj_align(sub_lbl, LV_ALIGN_TOP_MID, 0, 520);
+		lv_obj_set_style_text_color(sub_lbl, lv_color_hex(C_TEXT_TITLE), 0);
+		lv_obj_align(sub_lbl, LV_ALIGN_TOP_MID, 0, 22);
 		lv_obj_clear_flag(sub_lbl, LV_OBJ_FLAG_HIDDEN);
 
-		/* Floating prompt text below subtitle in bright pure white */
-		lv_obj_set_size(prompt_btn, 600, 48);
-		lv_obj_align(prompt_btn, LV_ALIGN_TOP_MID, 0, 570);
-		lv_obj_set_style_bg_opa(prompt_btn, LV_OPA_TRANSP, 0);
-		lv_obj_set_style_border_width(prompt_btn, 0, 0);
+		/* Retry Button */
+		lv_obj_set_size(prompt_btn, 480, 48);
+		lv_obj_align(prompt_btn, LV_ALIGN_TOP_MID, 0, 78);
+		lv_obj_set_style_bg_color(prompt_btn, lv_color_hex(C_BTN_RED_BG), 0);
+		lv_obj_set_style_bg_opa(prompt_btn, LV_OPA_COVER, 0);
+		lv_obj_set_style_border_color(prompt_btn, lv_color_hex(C_BTN_RED_RIM), 0);
+		lv_obj_set_style_border_width(prompt_btn, 2, 0);
+		lv_obj_set_style_radius(prompt_btn, 6, 0);
 
 		lv_label_set_text(prompt_lbl, "PRESS BUTTON TO RETRY");
-		lv_obj_set_style_text_color(prompt_lbl, lv_color_hex(0xFFFFFF), 0);
+		lv_obj_set_style_text_color(prompt_lbl, lv_color_hex(C_BTN_RED_TXT), 0);
 		lv_obj_align(prompt_lbl, LV_ALIGN_CENTER, 0, 0);
 
 		lv_obj_clear_flag(status_panel, LV_OBJ_FLAG_HIDDEN);
@@ -389,46 +435,59 @@ static void maze_ui_update_screen(maze_state_t state)
 	}
 
 	case MAZE_STATE_VICTORY: {
-		/* Full-screen transparent container with floating banner & text */
-		lv_obj_set_size(status_panel, 1280, 720);
-		lv_obj_set_pos(status_panel, 0, 0);
-		lv_obj_set_style_bg_opa(status_panel, LV_OPA_TRANSP, 0);
-		lv_obj_set_style_border_width(status_panel, 0, 0);
-
+		/* Hide start screen title graphics */
 		lv_obj_add_flag(badge_lbl, LV_OBJ_FLAG_HIDDEN);
-		lv_obj_add_flag(status_lbl, LV_OBJ_FLAG_HIDDEN);
+		lv_obj_add_flag(title_top_img, LV_OBJ_FLAG_HIDDEN);
+		lv_obj_add_flag(title_bot_img, LV_OBJ_FLAG_HIDDEN);
+		lv_image_set_rotation(title_top_img, 0);
+		lv_image_set_rotation(title_bot_img, 0);
+		if (status_lbl) {
+			lv_obj_add_flag(status_lbl, LV_OBJ_FLAG_HIDDEN);
+		}
 
-		/* Victory graphic banner covering 2/3rds screen height (480px) with pixelated sharp look */
+		/* 2/3rds screen height banner (480px) */
 		lv_image_set_src(status_img, &img_victory);
 		lv_image_set_pivot(status_img, img_victory.header.w / 2, 0);
-		lv_image_set_scale(status_img, 690); /* 178px * (690/256) ≈ 480px (2/3 of 720) */
+		lv_image_set_scale(status_img, 1033); /* 119px * 1033/256 ≈ 480px */
 		lv_image_set_antialias(status_img, false);
-		lv_obj_align(status_img, LV_ALIGN_TOP_MID, 0, 20);
+		lv_obj_align(status_img, LV_ALIGN_TOP_MID, 0, 15);
 		lv_obj_clear_flag(status_img, LV_OBJ_FLAG_HIDDEN);
 
-		/* Floating subtitle below banner in bright pure white */
+		/* Cohesive background box behind bottom text */
+		lv_obj_set_size(status_panel, 840, 155);
+		lv_obj_align(status_panel, LV_ALIGN_TOP_MID, 0, 510);
+		lv_obj_set_style_bg_color(status_panel, lv_color_hex(C_PANEL_BG), 0);
+		lv_obj_set_style_bg_opa(status_panel, LV_OPA_90, 0);
+		lv_obj_set_style_border_color(status_panel, lv_color_hex(C_PANEL_BORDER), 0);
+		lv_obj_set_style_border_width(status_panel, 3, 0);
+		lv_obj_set_style_radius(status_panel, 8, 0);
+
 		char tstr[16], bstr[16], sub_msg[96];
 		format_time(tstr, sizeof(tstr), maze_game_get_time_ms());
 		format_time(bstr, sizeof(bstr), maze_game_get_best_time_ms());
 
 		if (maze_game_is_new_best()) {
 			snprintf(sub_msg, sizeof(sub_msg), "NEW RECORD!  TIME: %s  |  BEST: %s", tstr, bstr);
+			lv_obj_set_style_text_color(sub_lbl, lv_color_hex(C_GATE_TEXT), 0);
 		} else {
 			snprintf(sub_msg, sizeof(sub_msg), "ESCAPE TIME: %s  |  BEST: %s", tstr, bstr);
+			lv_obj_set_style_text_color(sub_lbl, lv_color_hex(C_TEXT_TITLE), 0);
 		}
 		lv_label_set_text(sub_lbl, sub_msg);
-		lv_obj_set_style_text_color(sub_lbl, lv_color_hex(0xFFFFFF), 0);
-		lv_obj_align(sub_lbl, LV_ALIGN_TOP_MID, 0, 520);
+		lv_obj_align(sub_lbl, LV_ALIGN_TOP_MID, 0, 22);
 		lv_obj_clear_flag(sub_lbl, LV_OBJ_FLAG_HIDDEN);
 
-		/* Floating prompt text below subtitle in bright pure white */
-		lv_obj_set_size(prompt_btn, 600, 48);
-		lv_obj_align(prompt_btn, LV_ALIGN_TOP_MID, 0, 570);
-		lv_obj_set_style_bg_opa(prompt_btn, LV_OPA_TRANSP, 0);
-		lv_obj_set_style_border_width(prompt_btn, 0, 0);
+		/* Title Button */
+		lv_obj_set_size(prompt_btn, 480, 48);
+		lv_obj_align(prompt_btn, LV_ALIGN_TOP_MID, 0, 78);
+		lv_obj_set_style_bg_color(prompt_btn, lv_color_hex(C_BTN_RED_BG), 0);
+		lv_obj_set_style_bg_opa(prompt_btn, LV_OPA_COVER, 0);
+		lv_obj_set_style_border_color(prompt_btn, lv_color_hex(C_BTN_RED_RIM), 0);
+		lv_obj_set_style_border_width(prompt_btn, 2, 0);
+		lv_obj_set_style_radius(prompt_btn, 6, 0);
 
 		lv_label_set_text(prompt_lbl, "PRESS BUTTON TO RETURN TO TITLE");
-		lv_obj_set_style_text_color(prompt_lbl, lv_color_hex(0xFFFFFF), 0);
+		lv_obj_set_style_text_color(prompt_lbl, lv_color_hex(C_BTN_RED_TXT), 0);
 		lv_obj_align(prompt_lbl, LV_ALIGN_CENTER, 0, 0);
 
 		lv_obj_clear_flag(status_panel, LV_OBJ_FLAG_HIDDEN);
@@ -451,6 +510,20 @@ static void maze_ui_sync_cb(lv_timer_t *timer)
 	maze_ui_set_ball_pos(x, y);
 
 	maze_state_t wanted_state = maze_game_get_state();
+
+	/* Rotational weave and bob animation for the layered title logotypes */
+	static uint32_t title_anim_tick = 0;
+	if (wanted_state == MAZE_STATE_START) {
+		title_anim_tick++;
+		float theta = title_anim_tick * 0.04f;
+		/* LVGL rotation angles are in 0.1 degree units (10 = 1.0 deg).
+		 * Counter-phase rotational oscillation: max 0.5 degree (+/-5 units). */
+		int32_t rot_top = (int32_t)roundf(5.0f * sinf(theta));
+		int32_t rot_bot = -(int32_t)roundf(5.0f * sinf(theta));
+
+		lv_image_set_rotation(title_top_img, rot_top);
+		lv_image_set_rotation(title_bot_img, rot_bot);
+	}
 
 	if (wanted_state != shown_state) {
 		shown_state = wanted_state;

@@ -27,6 +27,8 @@ target_sources(app PRIVATE
     src/img_gameover.c
     src/img_victory.c
     src/img_player.c
+    src/img_title_top.c
+    src/img_title_bot.c
     ${DRIVERS}/vdma_disp/vdma_disp.c
     ${DRIVERS}/hdmi_fb/hdmi_fb.c
 )
