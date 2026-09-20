@@ -31,11 +31,17 @@ static struct k_thread game_thread;
 
 static atomic_t current_state = ATOMIC_INIT(MAZE_STATE_START);
 static uint32_t last_state_transition_ms;
+static uint32_t play_start_ms;
+static atomic_t time_ms = ATOMIC_INIT(0);
+static atomic_t best_time_ms = ATOMIC_INIT(0);
+static atomic_t new_best = ATOMIC_INIT(0);
 
 void maze_game_init(void)
 {
 	atomic_set(&current_state, MAZE_STATE_START);
 	last_state_transition_ms = k_uptime_get_32();
+	atomic_set(&time_ms, 0);
+	atomic_set(&new_best, 0);
 	maze_physics_set_active(false);
 	maze_physics_request_reset();
 }
@@ -55,6 +61,9 @@ void maze_game_on_button(button_event_t event)
 		printk("[maze] Title screen button -> start playing\n");
 		maze_physics_request_reset();
 		maze_physics_set_active(true);
+		play_start_ms = now;
+		atomic_set(&time_ms, 0);
+		atomic_set(&new_best, 0);
 		last_state_transition_ms = now;
 		atomic_set(&current_state, MAZE_STATE_PLAYING);
 		break;
@@ -65,6 +74,8 @@ void maze_game_on_button(button_event_t event)
 			printk("[maze] Long press during play -> reset to title screen\n");
 			maze_physics_set_active(false);
 			maze_physics_request_reset();
+			atomic_set(&time_ms, 0);
+			atomic_set(&new_best, 0);
 			last_state_transition_ms = now;
 			atomic_set(&current_state, MAZE_STATE_START);
 		} else {
@@ -78,6 +89,8 @@ void maze_game_on_button(button_event_t event)
 		printk("[maze] Game Over/Victory button -> return to title screen\n");
 		maze_physics_set_active(false);
 		maze_physics_request_reset();
+		atomic_set(&time_ms, 0);
+		atomic_set(&new_best, 0);
 		last_state_transition_ms = now;
 		atomic_set(&current_state, MAZE_STATE_START);
 		break;
@@ -89,6 +102,21 @@ maze_state_t maze_game_get_state(void)
 	return (maze_state_t)atomic_get(&current_state);
 }
 
+uint32_t maze_game_get_time_ms(void)
+{
+	return (uint32_t)atomic_get(&time_ms);
+}
+
+uint32_t maze_game_get_best_time_ms(void)
+{
+	return (uint32_t)atomic_get(&best_time_ms);
+}
+
+bool maze_game_is_new_best(void)
+{
+	return atomic_get(&new_best) != 0;
+}
+
 static void game_step(uint32_t now)
 {
 	maze_state_t st = (maze_state_t)atomic_get(&current_state);
@@ -96,6 +124,10 @@ static void game_step(uint32_t now)
 	if (st != MAZE_STATE_PLAYING) {
 		return;
 	}
+
+	/* Keep current run timer updated */
+	uint32_t elapsed = now - play_start_ms;
+	atomic_set(&time_ms, (atomic_val_t)elapsed);
 
 	/* Wait until ball is actually in place if reset was pending */
 	if (maze_physics_reset_pending()) {
@@ -114,7 +146,7 @@ static void game_step(uint32_t now)
 		float dy = ball_y - pits[i].y;
 
 		if (sqrtf(dx * dx + dy * dy) < pits[i].r) {
-			printk("[maze] Ball fell in hole %d — GAME OVER\n", (int)i);
+			printk("[maze] Ball fell in hole %d — GAME OVER (time: %u ms)\n", (int)i, elapsed);
 			maze_physics_set_active(false);
 			maze_physics_request_reset();
 			last_state_transition_ms = now;
@@ -129,7 +161,15 @@ static void game_step(uint32_t now)
 	float gy = ball_y - goal->y;
 
 	if (sqrtf(gx * gx + gy * gy) < goal->r) {
-		printk("[maze] Goal reached — ESCAPED!\n");
+		uint32_t current_best = (uint32_t)atomic_get(&best_time_ms);
+		if (current_best == 0 || elapsed < current_best) {
+			atomic_set(&best_time_ms, (atomic_val_t)elapsed);
+			atomic_set(&new_best, 1);
+			printk("[maze] Goal reached — NEW BEST TIME: %u ms!\n", elapsed);
+		} else {
+			atomic_set(&new_best, 0);
+			printk("[maze] Goal reached — ESCAPED in %u ms (best: %u ms)\n", elapsed, current_best);
+		}
 		maze_physics_set_active(false);
 		maze_physics_request_reset();
 		last_state_transition_ms = now;

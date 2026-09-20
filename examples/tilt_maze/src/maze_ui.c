@@ -10,6 +10,7 @@
 #include "maze_cores.h"
 #include <zephyr/kernel.h>
 #include <lvgl.h>
+#include <stdio.h>
 
 #define UI_STACK      16384
 #define UI_PRIO       5
@@ -27,6 +28,9 @@ static lv_obj_t *status_panel;
 static lv_obj_t *status_lbl;
 static lv_obj_t *sub_lbl;
 static lv_obj_t *prompt_lbl;
+static lv_obj_t *hud_panel;
+static lv_obj_t *hud_time_lbl;
+static lv_obj_t *hud_best_lbl;
 
 static void maze_ui_init(void)
 {
@@ -169,6 +173,43 @@ static void maze_ui_init(void)
 	lv_obj_set_style_text_font(prompt_lbl, &lv_font_montserrat_20, 0);
 	lv_obj_set_style_text_color(prompt_lbl, lv_color_hex(0xFF7F7F), 0);
 	lv_obj_align(prompt_lbl, LV_ALIGN_CENTER, 0, 52);
+
+	/* 7. Top-Right Timer HUD Card */
+	hud_panel = lv_obj_create(scr);
+	lv_obj_set_size(hud_panel, 230, 72);
+	lv_obj_align(hud_panel, LV_ALIGN_TOP_RIGHT, -25, 20);
+	lv_obj_set_style_bg_color(hud_panel, lv_color_hex(0x161B22), 0);
+	lv_obj_set_style_bg_opa(hud_panel, LV_OPA_90, 0);
+	lv_obj_set_style_border_color(hud_panel, lv_color_hex(0x30363D), 0);
+	lv_obj_set_style_border_width(hud_panel, 2, 0);
+	lv_obj_set_style_radius(hud_panel, 10, 0);
+	lv_obj_set_style_pad_hor(hud_panel, 14, 0);
+	lv_obj_set_style_pad_ver(hud_panel, 8, 0);
+	lv_obj_set_scrollbar_mode(hud_panel, LV_SCROLLBAR_MODE_OFF);
+
+	hud_time_lbl = lv_label_create(hud_panel);
+	lv_label_set_text(hud_time_lbl, "TIME: 00:00.0");
+	lv_obj_set_style_text_font(hud_time_lbl, &lv_font_montserrat_20, 0);
+	lv_obj_set_style_text_color(hud_time_lbl, lv_color_hex(0x58A6FF), 0);
+	lv_obj_align(hud_time_lbl, LV_ALIGN_TOP_LEFT, 0, 0);
+
+	hud_best_lbl = lv_label_create(hud_panel);
+	lv_label_set_text(hud_best_lbl, "BEST: --:--.-");
+	lv_obj_set_style_text_font(hud_best_lbl, &lv_font_montserrat_14, 0);
+	lv_obj_set_style_text_color(hud_best_lbl, lv_color_hex(0xD29922), 0);
+	lv_obj_align(hud_best_lbl, LV_ALIGN_BOTTOM_LEFT, 0, 0);
+}
+
+static void format_time(char *buf, size_t sz, uint32_t ms)
+{
+	if (ms == 0) {
+		snprintf(buf, sz, "--:--.-");
+		return;
+	}
+	uint32_t mins = ms / 60000;
+	uint32_t secs = (ms % 60000) / 1000;
+	uint32_t tenths = (ms % 1000) / 100;
+	snprintf(buf, sz, "%02u:%02u.%u", mins, secs, tenths);
 }
 
 static void maze_ui_set_ball_pos(float x, float y)
@@ -201,39 +242,56 @@ static void maze_ui_update_screen(maze_state_t state)
 		lv_obj_add_flag(status_panel, LV_OBJ_FLAG_HIDDEN);
 		break;
 
-	case MAZE_STATE_GAME_OVER:
+	case MAZE_STATE_GAME_OVER: {
 		lv_obj_set_style_border_color(status_panel, lv_color_hex(0xC0392B), 0);
 		lv_label_set_text(status_lbl, "GAME OVER");
 		lv_obj_set_style_text_color(status_lbl, lv_color_hex(0xFF4D4D), 0);
 
-		lv_label_set_text(sub_lbl, "");
-
-		lv_label_set_text(prompt_lbl, "press the button to try again");
-		lv_obj_set_style_text_color(prompt_lbl, lv_color_hex(0xE6EDF3), 0);
-
-		lv_obj_clear_flag(status_panel, LV_OBJ_FLAG_HIDDEN);
-		break;
-
-	case MAZE_STATE_VICTORY:
-		lv_obj_set_style_border_color(status_panel, lv_color_hex(0x3CC864), 0);
-		lv_label_set_text(status_lbl, "YOU ESCAPED!");
-		lv_obj_set_style_text_color(status_lbl, lv_color_hex(0x3CC864), 0);
-
-		lv_label_set_text(sub_lbl, "Castle Microchip has been conquered!");
+		char tstr[16], sub_msg[48];
+		format_time(tstr, sizeof(tstr), maze_game_get_time_ms());
+		snprintf(sub_msg, sizeof(sub_msg), "Survived for %s", tstr);
+		lv_label_set_text(sub_lbl, sub_msg);
 		lv_obj_set_style_text_color(sub_lbl, lv_color_hex(0x8B949E), 0);
 
-		lv_label_set_text(prompt_lbl, "press the button to play again");
+		lv_label_set_text(prompt_lbl, "press the button to return to title");
 		lv_obj_set_style_text_color(prompt_lbl, lv_color_hex(0xE6EDF3), 0);
 
 		lv_obj_clear_flag(status_panel, LV_OBJ_FLAG_HIDDEN);
 		break;
 	}
+
+	case MAZE_STATE_VICTORY: {
+		lv_obj_set_style_border_color(status_panel, lv_color_hex(0x3CC864), 0);
+		lv_label_set_text(status_lbl, "YOU ESCAPED!");
+		lv_obj_set_style_text_color(status_lbl, lv_color_hex(0x3CC864), 0);
+
+		char tstr[16], bstr[16], sub_msg[96];
+		format_time(tstr, sizeof(tstr), maze_game_get_time_ms());
+		format_time(bstr, sizeof(bstr), maze_game_get_best_time_ms());
+
+		if (maze_game_is_new_best()) {
+			snprintf(sub_msg, sizeof(sub_msg), "NEW RECORD! Time: %s (Best: %s)", tstr, bstr);
+			lv_obj_set_style_text_color(sub_lbl, lv_color_hex(0xF2A900), 0);
+		} else {
+			snprintf(sub_msg, sizeof(sub_msg), "Your Time: %s  |  Best: %s", tstr, bstr);
+			lv_obj_set_style_text_color(sub_lbl, lv_color_hex(0xE6EDF3), 0);
+		}
+		lv_label_set_text(sub_lbl, sub_msg);
+
+		lv_label_set_text(prompt_lbl, "press the button to return to title");
+		lv_obj_set_style_text_color(prompt_lbl, lv_color_hex(0xE6EDF3), 0);
+
+		lv_obj_clear_flag(status_panel, LV_OBJ_FLAG_HIDDEN);
+		break;
+	}
+	}
 }
 
-/* Pull the latest ball position and game state from the physics/game threads. */
+/* Pull the latest ball position, timer and game state from the physics/game threads. */
 static void maze_ui_sync_cb(lv_timer_t *timer)
 {
 	static maze_state_t shown_state = (maze_state_t)-1;
+	static uint32_t last_sync_tenths = (uint32_t)-1;
 
 	ARG_UNUSED(timer);
 
@@ -247,6 +305,31 @@ static void maze_ui_sync_cb(lv_timer_t *timer)
 	if (wanted_state != shown_state) {
 		shown_state = wanted_state;
 		maze_ui_update_screen(wanted_state);
+	}
+
+	/* Update top-right HUD timer */
+	uint32_t cur_ms = maze_game_get_time_ms();
+	uint32_t cur_tenths = cur_ms / 100;
+
+	if (cur_tenths != last_sync_tenths || wanted_state != shown_state) {
+		last_sync_tenths = cur_tenths;
+
+		char tbuf[32], bbuf[32], bstr[16];
+		uint32_t best_ms = maze_game_get_best_time_ms();
+
+		if (wanted_state == MAZE_STATE_START && cur_ms == 0) {
+			snprintf(tbuf, sizeof(tbuf), "TIME: 00:00.0");
+		} else {
+			uint32_t m = cur_ms / 60000;
+			uint32_t s = (cur_ms % 60000) / 1000;
+			uint32_t t = (cur_ms % 1000) / 100;
+			snprintf(tbuf, sizeof(tbuf), "TIME: %02u:%02u.%u", m, s, t);
+		}
+		lv_label_set_text(hud_time_lbl, tbuf);
+
+		format_time(bstr, sizeof(bstr), best_ms);
+		snprintf(bbuf, sizeof(bbuf), "BEST: %s", bstr);
+		lv_label_set_text(hud_best_lbl, bbuf);
 	}
 }
 
