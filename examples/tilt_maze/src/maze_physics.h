@@ -23,4 +23,8 @@ void maze_physics_request_reset(void);
 /** True from maze_physics_request_reset() until the reset has been applied. */
 bool maze_physics_reset_pending(void);
 
+/** Enable or pause physics simulation. When paused, ball stays at start position. */
+void maze_physics_set_active(bool active);
+bool maze_physics_is_active(void);
+
 #endif /* SRC_MAZE_PHYSICS_H */

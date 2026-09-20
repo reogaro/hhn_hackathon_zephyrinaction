@@ -28,6 +28,7 @@ static float pub_x = MAZE_START_X;
 static float pub_y = MAZE_START_Y;
 
 static atomic_t reset_req;
+static atomic_t is_active = ATOMIC_INIT(0);
 
 static K_THREAD_STACK_DEFINE(physics_stack, PHYSICS_STACK);
 static struct k_thread physics_thread;
@@ -101,6 +102,16 @@ bool maze_physics_reset_pending(void)
 	return atomic_get(&reset_req) != 0;
 }
 
+void maze_physics_set_active(bool active)
+{
+	atomic_set(&is_active, active ? 1 : 0);
+}
+
+bool maze_physics_is_active(void)
+{
+	return atomic_get(&is_active) != 0;
+}
+
 /* Physics thread only. */
 static void reset_ball(void)
 {
@@ -145,10 +156,17 @@ static void physics_fn(void *p1, void *p2, void *p3)
 			atomic_set(&reset_req, 0);
 		}
 
-		float tilt_x = 0.0f, tilt_y = 0.0f;
+		if (atomic_get(&is_active)) {
+			float tilt_x = 0.0f, tilt_y = 0.0f;
 
-		gy521_get_tilt(&tilt_x, &tilt_y);
-		step_physics(tilt_x, tilt_y, dt);
+			gy521_get_tilt(&tilt_x, &tilt_y);
+			step_physics(tilt_x, tilt_y, dt);
+		} else {
+			/* Keep marble stationary at start position when game is paused */
+			cpBodySetPosition(ball_body, cpv(MAZE_START_X, MAZE_START_Y));
+			cpBodySetVelocity(ball_body, cpvzero);
+			cpBodySetAngularVelocity(ball_body, 0.0f);
+		}
 		publish_ball_pos();
 
 		next_ms += PHYSICS_PERIOD_MS;

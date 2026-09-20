@@ -40,7 +40,7 @@ int main(void)
 	maze_physics_start(); /* core 1: physics */
 	maze_game_start();    /* core 2: game rules */
 	maze_ui_start();      /* core 0: LVGL */
-	button_start(maze_physics_request_reset); /* core 3: long press restarts the ball */
+	button_start(maze_game_on_button); /* core 3: button controls game start/restart */
 
 	printk("[tilt_maze] Initialization complete. UI/physics/game/sensor running on cores 0-3.\n");
 

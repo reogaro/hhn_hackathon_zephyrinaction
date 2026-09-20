@@ -6,18 +6,25 @@
 #ifndef SRC_MAZE_GAME_H
 #define SRC_MAZE_GAME_H
 
+#include <stdbool.h>
+#include "button.h"
+
 typedef enum {
-	MAZE_BANNER_NONE = 0,
-	MAZE_BANNER_HOLE,
-	MAZE_BANNER_GOAL,
-} maze_banner_t;
+	MAZE_STATE_START = 0,
+	MAZE_STATE_PLAYING,
+	MAZE_STATE_GAME_OVER,
+	MAZE_STATE_VICTORY,
+} maze_state_t;
 
 void maze_game_init(void);
 
 /** Start the game thread (pinned to MAZE_CORE_GAME). */
 void maze_game_start(void);
 
-/** Banner the UI should currently show; safe to call from any thread. */
-maze_banner_t maze_game_get_banner(void);
+/** Current game state; safe to call from any thread. */
+maze_state_t maze_game_get_state(void);
+
+/** Button event handler; safe to call from any thread. */
+void maze_game_on_button(button_event_t event);
 
 #endif /* SRC_MAZE_GAME_H */

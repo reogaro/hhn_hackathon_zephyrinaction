@@ -23,7 +23,10 @@ static lv_point_precise_t maze_line_pts[N_MAX_WALLS][MAZE_MAX_WALL_PTS];
 
 static lv_obj_t *platform_obj;
 static lv_obj_t *ball_obj;
-static lv_obj_t *banner_obj;
+static lv_obj_t *status_panel;
+static lv_obj_t *status_lbl;
+static lv_obj_t *sub_lbl;
+static lv_obj_t *prompt_lbl;
 
 static void maze_ui_init(void)
 {
@@ -138,12 +141,34 @@ static void maze_ui_init(void)
 	lv_obj_set_style_pad_all(ball_obj, 0, 0);
 	lv_obj_set_scrollbar_mode(ball_obj, LV_SCROLLBAR_MODE_OFF);
 
-	/* 6. Banner Message */
-	banner_obj = lv_label_create(scr);
-	lv_obj_set_style_text_font(banner_obj, &lv_font_montserrat_32, 0);
-	lv_obj_set_style_text_color(banner_obj, lv_color_hex(0xE6EDF3), 0);
-	lv_obj_align(banner_obj, LV_ALIGN_TOP_MID, 0, 10);
-	lv_obj_add_flag(banner_obj, LV_OBJ_FLAG_HIDDEN);
+	/* 6. Status Overlay Panel (Start screen, Game Over, Victory) */
+	status_panel = lv_obj_create(scr);
+	lv_obj_set_size(status_panel, 820, 220);
+	lv_obj_align(status_panel, LV_ALIGN_CENTER, 0, 0);
+	lv_obj_set_style_bg_color(status_panel, lv_color_hex(0x161B22), 0);
+	lv_obj_set_style_bg_opa(status_panel, LV_OPA_90, 0);
+	lv_obj_set_style_border_color(status_panel, lv_color_hex(0x2196D8), 0);
+	lv_obj_set_style_border_width(status_panel, 3, 0);
+	lv_obj_set_style_radius(status_panel, 14, 0);
+	lv_obj_set_scrollbar_mode(status_panel, LV_SCROLLBAR_MODE_OFF);
+
+	status_lbl = lv_label_create(status_panel);
+	lv_label_set_text(status_lbl, "");
+	lv_obj_set_style_text_font(status_lbl, &lv_font_montserrat_32, 0);
+	lv_obj_set_style_text_color(status_lbl, lv_color_hex(0x58A6FF), 0);
+	lv_obj_align(status_lbl, LV_ALIGN_CENTER, 0, -42);
+
+	sub_lbl = lv_label_create(status_panel);
+	lv_label_set_text(sub_lbl, "");
+	lv_obj_set_style_text_font(sub_lbl, &lv_font_montserrat_20, 0);
+	lv_obj_set_style_text_color(sub_lbl, lv_color_hex(0x8B949E), 0);
+	lv_obj_align(sub_lbl, LV_ALIGN_CENTER, 0, 10);
+
+	prompt_lbl = lv_label_create(status_panel);
+	lv_label_set_text(prompt_lbl, "");
+	lv_obj_set_style_text_font(prompt_lbl, &lv_font_montserrat_20, 0);
+	lv_obj_set_style_text_color(prompt_lbl, lv_color_hex(0xFF7F7F), 0);
+	lv_obj_align(prompt_lbl, LV_ALIGN_CENTER, 0, 52);
 }
 
 static void maze_ui_set_ball_pos(float x, float y)
@@ -155,26 +180,60 @@ static void maze_ui_set_ball_pos(float x, float y)
 	}
 }
 
-static void maze_ui_show_banner(const char *msg)
+static void maze_ui_update_screen(maze_state_t state)
 {
-	if (banner_obj && msg) {
-		lv_label_set_text(banner_obj, msg);
-		lv_obj_align(banner_obj, LV_ALIGN_TOP_MID, 0, 10);
-		lv_obj_remove_flag(banner_obj, LV_OBJ_FLAG_HIDDEN);
+	switch (state) {
+	case MAZE_STATE_START:
+		lv_obj_set_style_border_color(status_panel, lv_color_hex(0x2196D8), 0);
+		lv_label_set_text(status_lbl, "ESCAPE FROM CASTLE MICROCHIP");
+		lv_obj_set_style_text_color(status_lbl, lv_color_hex(0x58A6FF), 0);
+
+		lv_label_set_text(sub_lbl, "tilt the controller to roll");
+		lv_obj_set_style_text_color(sub_lbl, lv_color_hex(0x8B949E), 0);
+
+		lv_label_set_text(prompt_lbl, "press the red button to start");
+		lv_obj_set_style_text_color(prompt_lbl, lv_color_hex(0xFF7F7F), 0);
+
+		lv_obj_clear_flag(status_panel, LV_OBJ_FLAG_HIDDEN);
+		break;
+
+	case MAZE_STATE_PLAYING:
+		lv_obj_add_flag(status_panel, LV_OBJ_FLAG_HIDDEN);
+		break;
+
+	case MAZE_STATE_GAME_OVER:
+		lv_obj_set_style_border_color(status_panel, lv_color_hex(0xC0392B), 0);
+		lv_label_set_text(status_lbl, "GAME OVER");
+		lv_obj_set_style_text_color(status_lbl, lv_color_hex(0xFF4D4D), 0);
+
+		lv_label_set_text(sub_lbl, "");
+
+		lv_label_set_text(prompt_lbl, "press the button to try again");
+		lv_obj_set_style_text_color(prompt_lbl, lv_color_hex(0xE6EDF3), 0);
+
+		lv_obj_clear_flag(status_panel, LV_OBJ_FLAG_HIDDEN);
+		break;
+
+	case MAZE_STATE_VICTORY:
+		lv_obj_set_style_border_color(status_panel, lv_color_hex(0x3CC864), 0);
+		lv_label_set_text(status_lbl, "YOU ESCAPED!");
+		lv_obj_set_style_text_color(status_lbl, lv_color_hex(0x3CC864), 0);
+
+		lv_label_set_text(sub_lbl, "Castle Microchip has been conquered!");
+		lv_obj_set_style_text_color(sub_lbl, lv_color_hex(0x8B949E), 0);
+
+		lv_label_set_text(prompt_lbl, "press the button to play again");
+		lv_obj_set_style_text_color(prompt_lbl, lv_color_hex(0xE6EDF3), 0);
+
+		lv_obj_clear_flag(status_panel, LV_OBJ_FLAG_HIDDEN);
+		break;
 	}
 }
 
-static void maze_ui_hide_banner(void)
-{
-	if (banner_obj) {
-		lv_obj_add_flag(banner_obj, LV_OBJ_FLAG_HIDDEN);
-	}
-}
-
-/* Pull the latest ball position and banner from the physics/game threads. */
+/* Pull the latest ball position and game state from the physics/game threads. */
 static void maze_ui_sync_cb(lv_timer_t *timer)
 {
-	static maze_banner_t shown = MAZE_BANNER_NONE;
+	static maze_state_t shown_state = (maze_state_t)-1;
 
 	ARG_UNUSED(timer);
 
@@ -183,21 +242,11 @@ static void maze_ui_sync_cb(lv_timer_t *timer)
 	maze_physics_get_ball_pos(&x, &y);
 	maze_ui_set_ball_pos(x, y);
 
-	maze_banner_t wanted = maze_game_get_banner();
+	maze_state_t wanted_state = maze_game_get_state();
 
-	if (wanted != shown) {
-		shown = wanted;
-		switch (wanted) {
-		case MAZE_BANNER_HOLE:
-			maze_ui_show_banner("You fell in a hole! Restarting...");
-			break;
-		case MAZE_BANNER_GOAL:
-			maze_ui_show_banner("You made it out! Restarting...");
-			break;
-		default:
-			maze_ui_hide_banner();
-			break;
-		}
+	if (wanted_state != shown_state) {
+		shown_state = wanted_state;
+		maze_ui_update_screen(wanted_state);
 	}
 }
 
