@@ -7,10 +7,11 @@
  *
  * A reader thread samples the accelerometer at 100 Hz and turns the gravity
  * vector on the X/Y axes into a smoothed tilt that the game polls once per
- * frame through gy521_get_tilt().
+ * frame through gy521_get_tilt(). It runs pinned to its own core.
  */
 
 #include "gy521.h"
+#include "maze_cores.h"
 
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
@@ -130,10 +131,7 @@ static void gy521_fn(void *p1, void *p2, void *p3)
 
 void gy521_start(void)
 {
-	k_tid_t tid = k_thread_create(&gy521_thread, gy521_stack,
-				      K_THREAD_STACK_SIZEOF(gy521_stack),
-				      gy521_fn, NULL, NULL, NULL,
-				      GY521_PRIO, 0, K_NO_WAIT);
-
-	k_thread_name_set(tid, "gy521");
+	maze_thread_spawn(&gy521_thread, gy521_stack,
+			  K_THREAD_STACK_SIZEOF(gy521_stack),
+			  gy521_fn, GY521_PRIO, MAZE_CORE_SENSOR, "gy521");
 }

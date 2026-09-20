@@ -4,6 +4,8 @@
  *
  * Controlled by a GY-521 (InvenSense MPU-6050) IMU over I2C.
  * Rendered using native LVGL v9 scene graph objects and Chipmunk2D physics.
+ * UI, physics, game rules and sensor each run in their own thread on their
+ * own core (see maze_cores.h).
  */
 
 #include <zephyr/kernel.h>
@@ -28,24 +30,18 @@ int main(void)
 	}
 	display_blanking_off(display);
 
-	/* Initialize modular subsystems */
+	/* Build shared state single-threaded, then hand each module its own core */
 	maze_map_init();
 	maze_physics_init();
-	maze_ui_init();
 	maze_game_init();
 
-	/* Start sensor reader thread */
-	gy521_start();
+	gy521_start();        /* core 3: sensor */
+	maze_physics_start(); /* core 1: physics */
+	maze_game_start();    /* core 2: game rules */
+	maze_ui_start();      /* core 0: LVGL */
 
-	printk("[tilt_maze] Initialization complete. Entering LVGL dispatch loop.\n");
+	printk("[tilt_maze] Initialization complete. UI/physics/game/sensor running on cores 0-3.\n");
 
-	while (1) {
-		uint32_t sleep_ms = lv_timer_handler();
-		if (sleep_ms > 16) {
-			sleep_ms = 16;
-		} else if (sleep_ms == 0) {
-			sleep_ms = 1;
-		}
-		k_msleep(sleep_ms);
-	}
+	/* Everything runs in the pinned threads; main has nothing left to do. */
+	return 0;
 }

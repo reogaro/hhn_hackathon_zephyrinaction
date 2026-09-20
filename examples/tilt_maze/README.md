@@ -6,6 +6,19 @@ The tilt comes from the accelerometer's X/Y axes (gravity vector), read over I2C
 
 The VDMA/HDMI display drivers and devicetree bindings are reused from `examples/flappy-microchip`.
 
+## Threads and cores
+
+Each module runs in its own thread, pinned to its own U54 hart (`src/maze_cores.h`):
+
+| Core | Thread  | Job |
+| ---- | ------- | --- |
+| 0    | ui      | LVGL scene graph and rendering; the only thread that touches LVGL |
+| 1    | physics | Chipmunk2D at ~60 Hz; the only thread that touches Chipmunk; reads tilt, publishes ball position |
+| 2    | game    | Pit/goal rules and banner state; asks physics to reset the ball |
+| 3    | gy521   | 100 Hz I2C accelerometer polling |
+
+Threads share only small snapshots (spinlock-protected ball position, atomic tilt, banner and reset flags).
+
 ## Wiring
 
 | GY-521 Pin | Curiosity Kit Signal |

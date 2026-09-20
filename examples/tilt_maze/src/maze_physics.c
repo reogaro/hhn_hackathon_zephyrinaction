@@ -5,12 +5,42 @@
 
 #include "maze_physics.h"
 #include "maze_map.h"
+#include "maze_cores.h"
+#include "gy521.h"
 #include <chipmunk/chipmunk.h>
+#include <zephyr/kernel.h>
+#include <zephyr/spinlock.h>
+#include <zephyr/sys/atomic.h>
 #include <zephyr/sys/util.h>
 
+#define PHYSICS_STACK      8192
+#define PHYSICS_PRIO       5
+#define PHYSICS_PERIOD_MS  16
+
+/* Chipmunk state — owned exclusively by the physics thread after start. */
 static cpSpace *space;
 static cpBody  *ball_body;
 static cpShape *ball_shape;
+
+/* Published ball position, read by the game and UI threads on other cores. */
+static struct k_spinlock pos_lock;
+static float pub_x = MAZE_START_X;
+static float pub_y = MAZE_START_Y;
+
+static atomic_t reset_req;
+
+static K_THREAD_STACK_DEFINE(physics_stack, PHYSICS_STACK);
+static struct k_thread physics_thread;
+
+static void publish_ball_pos(void)
+{
+	cpVect pos = cpBodyGetPosition(ball_body);
+
+	K_SPINLOCK(&pos_lock) {
+		pub_x = (float)pos.x;
+		pub_y = (float)pos.y;
+	}
+}
 
 void maze_physics_init(void)
 {
@@ -61,22 +91,29 @@ void maze_physics_init(void)
 	cpShapeSetFriction(ball_shape, 0.35f);
 }
 
-void maze_physics_reset_ball(void)
+void maze_physics_request_reset(void)
 {
-	if (ball_body) {
-		cpBodySetPosition(ball_body, cpv(MAZE_START_X, MAZE_START_Y));
-		cpBodySetVelocity(ball_body, cpvzero);
-		cpBodySetAngularVelocity(ball_body, 0.0f);
-	}
+	atomic_set(&reset_req, 1);
 }
 
-void maze_physics_update(float tilt_x, float tilt_y, float dt)
+bool maze_physics_reset_pending(void)
 {
-	if (!space || !ball_body) {
-		return;
-	}
+	return atomic_get(&reset_req) != 0;
+}
 
+/* Physics thread only. */
+static void reset_ball(void)
+{
+	cpBodySetPosition(ball_body, cpv(MAZE_START_X, MAZE_START_Y));
+	cpBodySetVelocity(ball_body, cpvzero);
+	cpBodySetAngularVelocity(ball_body, 0.0f);
+	publish_ball_pos();
+}
+
+static void step_physics(float tilt_x, float tilt_y, float dt)
+{
 	const float accel_scale = 1600.0f;
+
 	cpSpaceSetGravity(space, cpv(tilt_x * accel_scale, tilt_y * accel_scale));
 
 	/* Substep Chipmunk2D physics simulation for maximum numerical stability */
@@ -84,14 +121,52 @@ void maze_physics_update(float tilt_x, float tilt_y, float dt)
 	cpSpaceStep(space, dt / 2.0f);
 }
 
+static void physics_fn(void *p1, void *p2, void *p3)
+{
+	ARG_UNUSED(p1); ARG_UNUSED(p2); ARG_UNUSED(p3);
+
+	int64_t next_ms = k_uptime_get();
+	uint32_t last_ms = k_uptime_get_32();
+
+	while (true) {
+		uint32_t now = k_uptime_get_32();
+		float dt = (now - last_ms) / 1000.0f;
+
+		last_ms = now;
+		if (dt > 0.05f) dt = 0.05f;
+		if (dt <= 0.001f) dt = 0.001f;
+
+		/* Reset is applied here so Chipmunk stays single-threaded. The flag
+		 * is cleared only after the new position is published, so the game
+		 * thread never sees the stale one.
+		 */
+		if (atomic_get(&reset_req)) {
+			reset_ball();
+			atomic_set(&reset_req, 0);
+		}
+
+		float tilt_x = 0.0f, tilt_y = 0.0f;
+
+		gy521_get_tilt(&tilt_x, &tilt_y);
+		step_physics(tilt_x, tilt_y, dt);
+		publish_ball_pos();
+
+		next_ms += PHYSICS_PERIOD_MS;
+		k_sleep(K_TIMEOUT_ABS_MS(next_ms));
+	}
+}
+
+void maze_physics_start(void)
+{
+	maze_thread_spawn(&physics_thread, physics_stack,
+			  K_THREAD_STACK_SIZEOF(physics_stack),
+			  physics_fn, PHYSICS_PRIO, MAZE_CORE_PHYSICS, "physics");
+}
+
 void maze_physics_get_ball_pos(float *x, float *y)
 {
-	if (ball_body) {
-		cpVect pos = cpBodyGetPosition(ball_body);
-		if (x) *x = (float)pos.x;
-		if (y) *y = (float)pos.y;
-	} else {
-		if (x) *x = MAZE_START_X;
-		if (y) *y = MAZE_START_Y;
+	K_SPINLOCK(&pos_lock) {
+		if (x) *x = pub_x;
+		if (y) *y = pub_y;
 	}
 }

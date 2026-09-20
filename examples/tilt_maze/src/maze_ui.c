@@ -5,7 +5,18 @@
 
 #include "maze_ui.h"
 #include "maze_map.h"
+#include "maze_physics.h"
+#include "maze_game.h"
+#include "maze_cores.h"
+#include <zephyr/kernel.h>
 #include <lvgl.h>
+
+#define UI_STACK      16384
+#define UI_PRIO       5
+#define UI_PERIOD_MS  16
+
+static K_THREAD_STACK_DEFINE(ui_stack, UI_STACK);
+static struct k_thread ui_thread;
 
 #define N_MAX_WALLS 16
 static lv_point_precise_t maze_line_pts[N_MAX_WALLS][MAZE_MAX_WALL_PTS];
@@ -14,7 +25,7 @@ static lv_obj_t *platform_obj;
 static lv_obj_t *ball_obj;
 static lv_obj_t *banner_obj;
 
-void maze_ui_init(void)
+static void maze_ui_init(void)
 {
 	lv_obj_t *scr = lv_screen_active();
 	if (!scr) {
@@ -135,7 +146,7 @@ void maze_ui_init(void)
 	lv_obj_add_flag(banner_obj, LV_OBJ_FLAG_HIDDEN);
 }
 
-void maze_ui_set_ball_pos(float x, float y)
+static void maze_ui_set_ball_pos(float x, float y)
 {
 	if (ball_obj) {
 		lv_obj_set_pos(ball_obj,
@@ -144,7 +155,7 @@ void maze_ui_set_ball_pos(float x, float y)
 	}
 }
 
-void maze_ui_show_banner(const char *msg)
+static void maze_ui_show_banner(const char *msg)
 {
 	if (banner_obj && msg) {
 		lv_label_set_text(banner_obj, msg);
@@ -153,9 +164,65 @@ void maze_ui_show_banner(const char *msg)
 	}
 }
 
-void maze_ui_hide_banner(void)
+static void maze_ui_hide_banner(void)
 {
 	if (banner_obj) {
 		lv_obj_add_flag(banner_obj, LV_OBJ_FLAG_HIDDEN);
 	}
+}
+
+/* Pull the latest ball position and banner from the physics/game threads. */
+static void maze_ui_sync_cb(lv_timer_t *timer)
+{
+	static maze_banner_t shown = MAZE_BANNER_NONE;
+
+	ARG_UNUSED(timer);
+
+	float x, y;
+
+	maze_physics_get_ball_pos(&x, &y);
+	maze_ui_set_ball_pos(x, y);
+
+	maze_banner_t wanted = maze_game_get_banner();
+
+	if (wanted != shown) {
+		shown = wanted;
+		switch (wanted) {
+		case MAZE_BANNER_HOLE:
+			maze_ui_show_banner("You fell in a hole! Restarting...");
+			break;
+		case MAZE_BANNER_GOAL:
+			maze_ui_show_banner("You made it out! Restarting...");
+			break;
+		default:
+			maze_ui_hide_banner();
+			break;
+		}
+	}
+}
+
+/* The only thread that ever touches LVGL. */
+static void ui_fn(void *p1, void *p2, void *p3)
+{
+	ARG_UNUSED(p1); ARG_UNUSED(p2); ARG_UNUSED(p3);
+
+	maze_ui_init();
+	lv_timer_create(maze_ui_sync_cb, UI_PERIOD_MS, NULL);
+
+	while (true) {
+		uint32_t sleep_ms = lv_timer_handler();
+
+		if (sleep_ms > UI_PERIOD_MS) {
+			sleep_ms = UI_PERIOD_MS;
+		} else if (sleep_ms == 0) {
+			sleep_ms = 1;
+		}
+		k_msleep(sleep_ms);
+	}
+}
+
+void maze_ui_start(void)
+{
+	maze_thread_spawn(&ui_thread, ui_stack, K_THREAD_STACK_SIZEOF(ui_stack),
+			  ui_fn, UI_PRIO, MAZE_CORE_UI, "ui");
 }
