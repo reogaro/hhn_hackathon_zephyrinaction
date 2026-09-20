@@ -7,11 +7,10 @@
  *
  * The ring follows the game state (read from maze_game_get_state(), so the
  * game code does not know about the ring):
- *   title screen  all LEDs cycle blue -> yellow -> green -> red, repeating,
- *                 until the game is started
- *   playing       steady green
+ *   title screen  steady white at half brightness (saves current)
+ *   playing       moving rainbow
  *   game over     red blinks until the game is restarted
- *   victory       green blinks until the game is restarted
+ *   victory       rainbow blinks until the game is restarted
  *
  * The ring is on the mikroBUS MOSI pin (SPI1). If it is not connected the
  * game is unaffected.

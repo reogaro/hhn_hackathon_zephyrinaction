@@ -27,8 +27,12 @@
 /* Keep dim: each LED draws up to ~60 mA at full white */
 #define BRIGHTNESS 32
 
-#define CYCLE_MS       400  /* title screen: time per colour */
-#define BLINK_MS       250  /* game over / victory: on and off time */
+/* Title screen white: three channels lit, so run it at half brightness to save current */
+#define WHITE_PERCENT  50
+
+#define RAINBOW_FRAME_MS 40  /* playing: time between rainbow steps */
+#define RAINBOW_HUE_STEP 4   /* playing: how far the rainbow moves per step */
+#define BLINK_MS         250 /* game over / victory: on and off time */
 
 /* Print each ring update on the console, to debug the SPI transfer */
 #define LED_RING_DEBUG 0
@@ -39,18 +43,42 @@ static struct led_rgb pixels[NUM_LEDS];
 static K_THREAD_STACK_DEFINE(led_stack, LED_STACK);
 static struct k_thread led_thread;
 
-static const struct led_rgb OFF    = { .r = 0, .g = 0, .b = 0 };
-static const struct led_rgb BLUE   = { .r = 0, .g = 0, .b = BRIGHTNESS };
-static const struct led_rgb GREEN  = { .r = 0, .g = BRIGHTNESS, .b = 0 };
-static const struct led_rgb RED    = { .r = BRIGHTNESS, .g = 0, .b = 0 };
-static const struct led_rgb YELLOW = { .r = BRIGHTNESS, .g = BRIGHTNESS * 3 / 4, .b = 0 };
+#define WHITE_LEVEL (BRIGHTNESS * WHITE_PERCENT / 100)
 
-static void show_all(struct led_rgb color)
+static const struct led_rgb OFF   = { .r = 0, .g = 0, .b = 0 };
+static const struct led_rgb RED   = { .r = BRIGHTNESS, .g = 0, .b = 0 };
+static const struct led_rgb WHITE = { .r = WHITE_LEVEL, .g = WHITE_LEVEL, .b = WHITE_LEVEL };
+
+/* Colour wheel: 0-255 runs red -> green -> blue -> red, scaled by BRIGHTNESS. */
+static struct led_rgb wheel(uint8_t pos)
 {
-	for (int i = 0; i < NUM_LEDS; i++) {
-		pixels[i] = color;
+	uint8_t r, g, b;
+
+	if (pos < 85) {
+		r = 255 - pos * 3;
+		g = pos * 3;
+		b = 0;
+	} else if (pos < 170) {
+		pos -= 85;
+		r = 0;
+		g = 255 - pos * 3;
+		b = pos * 3;
+	} else {
+		pos -= 170;
+		r = pos * 3;
+		g = 0;
+		b = 255 - pos * 3;
 	}
 
+	return (struct led_rgb){
+		.r = r * BRIGHTNESS / 255,
+		.g = g * BRIGHTNESS / 255,
+		.b = b * BRIGHTNESS / 255,
+	};
+}
+
+static void send(void)
+{
 #if LED_RING_DEBUG
 	printk("[led_ring] send t=%u\n", k_uptime_get_32());
 #endif
@@ -62,6 +90,23 @@ static void show_all(struct led_rgb color)
 	if (err) {
 		printk("[led_ring] update failed: %d\n", err);
 	}
+}
+
+static void show_all(struct led_rgb color)
+{
+	for (int i = 0; i < NUM_LEDS; i++) {
+		pixels[i] = color;
+	}
+	send();
+}
+
+/* Rainbow spread over the whole ring, starting at colour @p hue */
+static void show_rainbow(uint8_t hue)
+{
+	for (int i = 0; i < NUM_LEDS; i++) {
+		pixels[i] = wheel(hue + i * 256 / NUM_LEDS);
+	}
+	send();
 }
 
 /* Sleep up to @p ms, but return early once the game state is no longer @p st */
@@ -81,9 +126,9 @@ static void led_fn(void *p1, void *p2, void *p3)
 		return;
 	}
 
-	const struct led_rgb *cycle[] = { &BLUE, &YELLOW, &GREEN, &RED };
 	int shown = -1;
-	int phase = 0;
+	uint8_t hue = 0;
+	unsigned int phase = 0;
 
 	while (true) {
 		int st = maze_game_get_state();
@@ -91,25 +136,31 @@ static void led_fn(void *p1, void *p2, void *p3)
 		if (st != shown) {
 			shown = st;
 			phase = 0;
-			if (st == MAZE_STATE_PLAYING) {
-				show_all(GREEN);
+			if (st == MAZE_STATE_START) {
+				show_all(WHITE);
 			}
 		}
 
 		switch (st) {
-		case MAZE_STATE_START:
-			show_all(*cycle[phase++ % ARRAY_SIZE(cycle)]);
-			wait_in_state(st, CYCLE_MS);
+		case MAZE_STATE_PLAYING:
+			show_rainbow(hue);
+			hue += RAINBOW_HUE_STEP;
+			wait_in_state(st, RAINBOW_FRAME_MS);
 			break;
 		case MAZE_STATE_GAME_OVER:
 			show_all((phase++ & 1) ? OFF : RED);
 			wait_in_state(st, BLINK_MS);
 			break;
 		case MAZE_STATE_VICTORY:
-			show_all((phase++ & 1) ? OFF : GREEN);
+			if (phase++ & 1) {
+				show_all(OFF);
+			} else {
+				show_rainbow(hue);
+				hue += RAINBOW_HUE_STEP * 8;
+			}
 			wait_in_state(st, BLINK_MS);
 			break;
-		default:
+		default: /* title screen: steady white, already shown */
 			k_msleep(POLL_MS);
 			break;
 		}

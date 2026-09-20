@@ -46,10 +46,10 @@ A 24-LED WS2812 ring shows the game state. Wire DIN to the mikroBUS MOSI pin, 5V
 
 | Situation | Ring |
 | --------- | ---- |
-| Title screen (until the game is started) | all LEDs cycle blue → yellow → green → red, repeating |
-| Playing | green |
+| Title screen (until the game is started) | steady white at half brightness (saves current) |
+| Playing | moving rainbow |
 | Game over | red blinks until the game is restarted |
-| Victory | green blinks until the game is restarted |
+| Victory | rainbow blinks until the game is restarted |
 
 ## Build
 
